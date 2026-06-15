@@ -386,6 +386,14 @@ def main():
              "keyframes up to this rate; duration is preserved.",
     )
     parser.add_argument(
+        "--gen-width", type=int, default=int(os.environ.get("GEN_W", 832)),
+        help="Generation width (should match the source aspect ratio).",
+    )
+    parser.add_argument(
+        "--gen-height", type=int, default=int(os.environ.get("GEN_H", 480)),
+        help="Generation height (should match the source aspect ratio).",
+    )
+    parser.add_argument(
         "--riflex-index", type=int, default=int(os.environ.get("RIFLEX_FREQ_INDEX", 0)),
         help="RIFLEx positional-frequency index. 0 = off (native <=81 frames). "
              "Set 4-6 only when extending beyond the native length (Phase 2).",
@@ -433,23 +441,40 @@ def main():
         render_output,
     )
 
-    # ── Reconcile video length with the actual guidance frames ──────────────
-    # This is a control-driven workflow: output length is LOCKED to the number
-    # of guidance frames (= source clip length). The control latents (node 20→22)
-    # and the image-cond latents (node 24) must encode the same frame count, or
-    # the sampler crashes ("Sizes of tensors must match"). So we force them equal.
-    MAX_FRAMES = 81  # single-pass ceiling for an L4 (24GB) at 832x480
+    # ── Reconcile video length with the driving frames ──────────────────────
+    # Wan-Animate renders the WHOLE driving performance via context windows, so
+    # there is no 81-frame single-pass ceiling — we use every extracted frame.
+    # VRAM is bounded by frame_window_size (set on WanVideoAnimateEmbeds), not by
+    # the total length. MAX_FRAMES is just a sanity guard against runaway clips.
+    MAX_FRAMES = int(os.environ.get("ANIMATE_MAX_FRAMES", 1000))
+    FRAME_WINDOW = int(os.environ.get("ANIMATE_FRAME_WINDOW", 77))
     available = len(sorted(args.controlnet_maps.glob("*.png")))
     if available == 0:
-        log.error(f"No guidance frames in {args.controlnet_maps}")
+        log.error(f"No driving frames in {args.controlnet_maps}")
         sys.exit(1)
 
     requested = int(workflow.get("24", {}).get("inputs", {}).get("num_frames", available))
-    target = max(1, min(requested, available, MAX_FRAMES))
+    # Use all available frames (cap only if absurdly long); ignore the workflow's
+    # placeholder num_frames — the driving clip length is authoritative.
+    target = max(1, min(available, MAX_FRAMES))
 
-    # Set BOTH the control-frame loader and the output length to the same count.
-    workflow["20"]["inputs"]["image_load_cap"] = target   # VHS_LoadImages
-    workflow["24"]["inputs"]["num_frames"] = target        # WanVideoImageToVideoEncode
+    # Load all driving frames; set the output length to the same count.
+    workflow["20"]["inputs"]["image_load_cap"] = 0          # VHS_LoadImages (0 = all)
+    workflow["24"]["inputs"]["num_frames"] = target          # WanVideoAnimateEmbeds
+    # Context window: render in overlapping windows so VRAM stays bounded.
+    workflow["24"]["inputs"]["frame_window_size"] = min(FRAME_WINDOW, target)
+
+    # ── Inject generation dimensions (match source aspect — no letterboxing) ──
+    gen_w = (int(args.gen_width) // 16) * 16
+    gen_h = (int(args.gen_height) // 16) * 16
+    for node in workflow.values():
+        ct = node.get("class_type")
+        ins = node.setdefault("inputs", {})
+        if ct in ("ImageScale", "PoseAndFaceDetection", "DrawViTPose", "WanVideoAnimateEmbeds"):
+            if "width" in ins or ct in ("PoseAndFaceDetection", "DrawViTPose", "WanVideoAnimateEmbeds", "ImageScale"):
+                ins["width"] = gen_w
+                ins["height"] = gen_h
+    log.info(f"Generation size set to {gen_w}x{gen_h}; frame_window_size={workflow['24']['inputs']['frame_window_size']}.")
 
     # ── Frame interpolation (RIFE): smooth low-fps keyframes up to target_fps ───
     # The diffusion pass renders `target` keyframes spanning the whole clip at a
@@ -532,13 +557,10 @@ def main():
         else:
             log.warning("Block swap requested but no WanVideoModelLoader found.")
 
-    if target != requested:
-        log.info(
-            f"Length reconciled: requested {requested}, "
-            f"{available} guidance frames available, capped to {MAX_FRAMES} → using {target}. "
-            f"(Upload a longer clip for a longer video.)"
-        )
-    log.info(f"Rendering {target} keyframes at 832x480 → {playback_fps} fps playback.")
+    log.info(
+        f"Rendering {target} driving frames at {gen_w}x{gen_h} "
+        f"(window={workflow['24']['inputs']['frame_window_size']}) → {playback_fps} fps playback."
+    )
 
     # Start ComfyUI server
     server_proc = start_comfyui_server(render_output)

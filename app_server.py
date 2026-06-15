@@ -43,13 +43,15 @@ def run_pipeline_worker(
     global pipeline_running, pipeline_process
     pipeline_running = True
 
-    # We write dynamic params to workflow or just run it with default workflow.
-    # Note: To update sigma/steps/cfg, we could modify the workflow JSON file.
-    # Let's read and update workflow_qi_pipeline.json with steps & cfg!
-    workflow_path = PIPELINE_ROOT / "scripts" / "workflow_qi_pipeline.json"
-    if workflow_path.exists():
+    # Apply the UI's parameters to a PER-RUN COPY of the workflow, leaving the
+    # canonical workflow_qi_pipeline.json pristine (so it never drifts from the
+    # repo). The copy's path is passed to the pipeline via WORKFLOW_PATH.
+    canonical_workflow = PIPELINE_ROOT / "scripts" / "workflow_qi_pipeline.json"
+    active_workflow = PIPELINE_ROOT / "tmp" / "workflow_active.json"
+    workflow_ready = False
+    if canonical_workflow.exists():
         try:
-            with open(workflow_path, 'r') as f:
+            with open(canonical_workflow, 'r') as f:
                 wf = json.load(f)
 
             # Update CFG and Steps in WanVideoSampler (Node 30)
@@ -68,18 +70,24 @@ def run_pipeline_worker(
             if "24" in wf and "inputs" in wf["24"]:
                 wf["24"]["inputs"]["num_frames"] = num_frames
 
-            with open(workflow_path, 'w') as f:
+            active_workflow.parent.mkdir(parents=True, exist_ok=True)
+            with open(active_workflow, 'w') as f:
                 json.dump(wf, f, indent=2)
-            print(f"[Backend] Updated workflow JSON: steps={steps}, cfg={cfg}, "
-                  f"num_frames={num_frames}, prompt_len={len(prompt)}")
+            workflow_ready = True
+            print(f"[Backend] Wrote per-run workflow → {active_workflow} "
+                  f"(steps={steps}, cfg={cfg}, num_frames={num_frames}, prompt_len={len(prompt)})")
         except Exception as e:
-            print(f"[Backend] Error updating workflow JSON: {e}")
+            print(f"[Backend] Error preparing workflow JSON: {e}")
 
     # Run run_pipeline.sh with SKIP_SHUTDOWN=1 and output logging to LOG_FILE
     env = os.environ.copy()
     env["SKIP_SHUTDOWN"] = "1"
     env["PIPELINE_ROOT"] = str(PIPELINE_ROOT)
     env["TARGET_FPS"] = str(target_fps)
+    # Point the pipeline at the per-run workflow copy (falls back to the
+    # canonical file inside run_pipeline.sh if preparation failed).
+    if workflow_ready:
+        env["WORKFLOW_PATH"] = str(active_workflow)
     
     # Clear the old log file
     if LOG_FILE.exists():

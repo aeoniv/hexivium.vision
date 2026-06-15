@@ -131,14 +131,15 @@ STAGE1_END=$(date +%s)
 echo "[PIPELINE] Stage 1 complete in $((STAGE1_END - STAGE1_START))s"
 
 # ============================================================================
-# STAGE 2: Frame Extraction — pose control straight from the source video
+# STAGE 2: Frame Extraction — driving frames for Wan-Animate
 # ============================================================================
-# Pose detectors (DWPose/DensePose) work on REAL footage, not re-rendered 3D
-# meshes. We sample the source video into <=81 evenly-spaced frames (the L4
-# single-pass ceiling), letterboxed to the render size. These feed Stage 3.
+# Wan-Animate reads pose + face from the REAL driving footage and renders the
+# whole performance via context windows (no 81-frame single-pass ceiling). So we
+# keep the real motion (extract at ANIMATE_FPS, not a downsampled 2 fps) and
+# match the source aspect ratio (no letterboxing of a square video into 16:9).
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│  STAGE 2: Frame Extraction — source video → control frames  │"
+echo "│  STAGE 2: Frame Extraction — driving frames (full motion)   │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE2_START=$(date +%s)
 
@@ -146,20 +147,35 @@ SRC_VIDEO="${INPUT_DIR}/source_video.mp4"
 rm -rf "${OUTPUT_DIR}/renders"
 mkdir -p "${OUTPUT_DIR}/renders"
 
-# Sample fps so the whole clip fits in <=81 frames, never upsampling past native.
 DURATION=$(ffprobe -v error -select_streams v:0 -show_entries format=duration \
     -of default=noprint_wrappers=1:nokey=1 "${SRC_VIDEO}")
 NATIVE_FPS=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
     -of default=noprint_wrappers=1:nokey=1 "${SRC_VIDEO}")
+SRC_W=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+    -of default=noprint_wrappers=1:nokey=1 "${SRC_VIDEO}")
+SRC_H=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+    -of default=noprint_wrappers=1:nokey=1 "${SRC_VIDEO}")
+
+# Generation dims: preserve source aspect, target ~GEN_SIZE on the long edge,
+# rounded to a multiple of 16 (Wan requirement).
+GEN_SIZE="${GEN_SIZE:-640}"
+read GEN_W GEN_H < <(python -c "
+w,h=${SRC_W},${SRC_H}
+s=${GEN_SIZE}/max(w,h)
+print(max(16,int(round(w*s/16))*16), max(16,int(round(h*s/16))*16))
+")
+export GEN_W GEN_H
+
+# Extract at the real motion rate (capped to TARGET_EXTRACT_FPS, never upsampling).
 EXTRACT_FPS=$(python -c "
 n='${NATIVE_FPS}'.split('/'); nf=float(n[0])/float(n[1]) if len(n)>1 else float(n[0])
-d=float('${DURATION}')
-print(max(1, int(min(nf, 81.0/d))))
+print(max(1, int(min(nf, ${TARGET_EXTRACT_FPS:-16}))))
 ")
-echo "[Stage2] source: duration=${DURATION}s native_fps=${NATIVE_FPS} -> extract_fps=${EXTRACT_FPS}"
+echo "[Stage2] source: ${SRC_W}x${SRC_H} duration=${DURATION}s native_fps=${NATIVE_FPS}"
+echo "[Stage2] -> gen=${GEN_W}x${GEN_H} extract_fps=${EXTRACT_FPS}"
 
 ffmpeg -y -loglevel error -i "${SRC_VIDEO}" \
-    -vf "fps=${EXTRACT_FPS},scale=832:480:force_original_aspect_ratio=decrease,pad=832:480:(ow-iw)/2:(oh-ih)/2" \
+    -vf "fps=${EXTRACT_FPS},scale=${GEN_W}:${GEN_H}:force_original_aspect_ratio=decrease,pad=${GEN_W}:${GEN_H}:(ow-iw)/2:(oh-ih)/2" \
     "${OUTPUT_DIR}/renders/frame_%06d.png"
 
 FRAME_COUNT=$(find "${OUTPUT_DIR}/renders" -name '*.png' | wc -l)
@@ -167,7 +183,7 @@ if [ "${FRAME_COUNT}" -lt 1 ]; then
     echo "[PIPELINE] ERROR: Stage 2 frame extraction produced no frames."
     exit 1
 fi
-echo "[Stage2] Extracted ${FRAME_COUNT} control frames @ ${EXTRACT_FPS} fps"
+echo "[Stage2] Extracted ${FRAME_COUNT} driving frames @ ${EXTRACT_FPS} fps (${GEN_W}x${GEN_H})"
 
 STAGE2_END=$(date +%s)
 echo "[PIPELINE] Stage 2 complete in $((STAGE2_END - STAGE2_START))s"
@@ -181,14 +197,10 @@ echo "│  STAGE 3: ControlNet-Aux — DensePose + DWPose Maps          │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE3_START=$(date +%s)
 
-# Clear prior guidance maps so a shorter clip can't inherit stale frames from a
-# longer previous run (which would inflate the frame count and crash Stage 4).
-rm -rf "${OUTPUT_DIR}/controlnet_maps"
-
-python "${SCRIPTS_DIR}/stage3_controlnet_preprocess.py" \
-    --frames "${OUTPUT_DIR}/renders" \
-    --resolution 832 \
-    --device cuda
+# Wan-Animate does its own pose + face detection INSIDE the Stage 4 ComfyUI graph
+# (PoseAndFaceDetection / DrawViTPose). The standalone DensePose/DWPose pass is no
+# longer needed — Stage 4 consumes the raw driving frames in ${OUTPUT_DIR}/renders.
+echo "[Stage3] Pose/face detection deferred to Stage 4 (Wan-Animate, in-graph)."
 
 STAGE3_END=$(date +%s)
 echo "[PIPELINE] Stage 3 complete in $((STAGE3_END - STAGE3_START))s"
@@ -202,13 +214,23 @@ echo "│  STAGE 4: ComfyUI — Wan 2.1 14B Neural Render              │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE4_START=$(date +%s)
 
+# Square the reference WITHOUT stretching (pad to a square canvas), so a tall
+# portrait avatar isn't squashed wider ("fat") when scaled to the square gen size.
+REF_SQUARE="${OUTPUT_DIR}/reference_square.png"
+ffmpeg -y -loglevel error -i "${INPUT_DIR}/reference_image.png" \
+    -vf "pad=w='max(iw,ih)':h='max(iw,ih)':x='(ow-iw)/2':y='(oh-ih)/2':color=white" \
+    "${REF_SQUARE}" || cp "${INPUT_DIR}/reference_image.png" "${REF_SQUARE}"
+echo "[Stage4] Reference padded to square: ${REF_SQUARE}"
+
 python "${SCRIPTS_DIR}/stage4_comfyui_render.py" \
-    --workflow "${SCRIPTS_DIR}/workflow_qi_pipeline.json" \
-    --reference-image "${INPUT_DIR}/reference_image.png" \
-    --controlnet-maps "${OUTPUT_DIR}/controlnet_maps/composite" \
+    --workflow "${WORKFLOW_PATH:-${SCRIPTS_DIR}/workflow_qi_pipeline.json}" \
+    --reference-image "${REF_SQUARE}" \
+    --controlnet-maps "${OUTPUT_DIR}/renders" \
     --output "${OUTPUT_DIR}/final.mp4" \
     --fps "${EXTRACT_FPS:-24}" \
     --target-fps "${TARGET_FPS:-30}" \
+    --gen-width "${GEN_W:-832}" \
+    --gen-height "${GEN_H:-480}" \
     --riflex-index "${RIFLEX_FREQ_INDEX:-0}" \
     --block-swap "${BLOCK_SWAP:-0}"
 

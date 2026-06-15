@@ -1,0 +1,162 @@
+
+[63] VHS_LoadVideo  (VHS_LoadVideo)
+    widgets_values = {'video': 'raw.mp4', 'force_rate': 16, 'custom_width': 960, 'custom_height': 544, 'frame_l...
+    in  meta_batch: (none)
+    in  vae: (none)
+    in  custom_width <- 150 INTConstant.value
+    in  custom_height <- 151 INTConstant.value
+
+[64] ImageResizeKJv2  (ImageResizeKJv2)
+    widgets_values = [832, 480, 'lanczos', 'pad_edge_pixel', '0, 0, 0', 'top', 16, 'cpu', '<tr><td>Output: </td><td><b>1</b> x <b>832</b> x <b>480 | 4.57MB</b></td></tr>']
+    in  image <- 57 LoadImage.IMAGE
+    in  mask: (none)
+    in  width <- 150 INTConstant.value
+    in  height <- 151 INTConstant.value
+
+[57] LoadImage  (LoadImage)
+    widgets_values = ['refer.jpeg', 'image']
+
+[71] CLIPVisionLoader  (CLIPVisionLoader)
+    widgets_values = ['clip_vision_h.safetensors']
+
+[70] WanVideoClipVisionEncode  (WanVideoClipVisionEncode)
+    widgets_values = [1, 1, 'center', 'average', True, 0, 0.5]
+    in  clip_vision <- 71 CLIPVisionLoader.CLIP_VISION
+    in  image_1 <- 64 ImageResizeKJv2.IMAGE
+    in  image_2: (none)
+    in  negative_image: (none)
+
+[35] WanVideoTorchCompileSettings  (WanVideoTorchCompileSettings)
+    widgets_values = ['inductor', False, 'default', False, 64, True, 128]
+
+[38] WanVideoVAELoader  (WanVideoVAELoader)
+    widgets_values = ['wanvideo\\Wan2_1_VAE_bf16.safetensors', 'bf16']
+    in  compile_args: (none)
+
+[28] WanVideoDecode  (WanVideoDecode)
+    widgets_values = [False, 272, 272, 144, 128, 'default']
+    in  vae <- 38 WanVideoVAELoader.vae
+    in  samples <- 27 WanVideoSampler.samples
+
+[42] GetImageSizeAndCount  (GetImageSizeAndCount)
+    widgets_values = []
+    in  image <- 28 WanVideoDecode.images
+
+[110] WanVideoContextOptions  (WanVideoContextOptions)
+    widgets_values = ['static_standard', 81, 4, 32, True, False, 'linear']
+    in  reference_latent: (none)
+
+[65] WanVideoTextEncodeCached  (WanVideoTextEncodeCached)
+    widgets_values = ['umt5-xxl-enc-bf16.safetensors', 'bf16', 'man is walking, style is soft 3D render style, night time, moonlight', '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，..., 'disabled', False, 'gpu']
+    in  extender_args: (none)
+
+[62] WanVideoAnimateEmbeds  (WanVideoAnimateEmbeds)
+    widgets_values = [832, 480, 501, False, 77, 'disabled', 1, 1, False]
+    in  vae <- 38 WanVideoVAELoader.vae
+    in  clip_embeds <- 70 WanVideoClipVisionEncode.image_embeds
+    in  ref_images <- 64 ImageResizeKJv2.IMAGE
+    in  pose_images <- 173 DrawViTPose.pose_images
+    in  face_images <- 172 PoseAndFaceDetection.face_images
+    in  bg_images <- 99 DrawMaskOnImage.images
+    in  mask <- 108 BlockifyMask.mask
+    in  width <- 150 INTConstant.value
+    in  height <- 151 INTConstant.value
+    in  num_frames <- 63 VHS_LoadVideo.frame_count
+
+[22] WanVideoModelLoader  (WanVideoModelLoader)
+    widgets_values = ['WanVideo\\2_2\\Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors', 'fp16_fast', 'disabled', 'offload_device', 'sageattn', 'default']
+    in  compile_args <- 35 WanVideoTorchCompileSettings.torch_compile_args
+    in  block_swap_args: (none)
+    in  lora: (none)
+    in  vram_management_args: (none)
+    in  extra_model: (none)
+    in  fantasytalking_model: (none)
+    in  multitalk_model: (none)
+    in  fantasyportrait_model: (none)
+
+[51] WanVideoBlockSwap  (WanVideoBlockSwap)
+    widgets_values = [25, False, False, True, 0, 1, False]
+
+[50] WanVideoSetBlockSwap  (WanVideoSetBlockSwap)
+    widgets_values = []
+    in  model <- 48 WanVideoSetLoRAs.model
+    in  block_swap_args <- 51 WanVideoBlockSwap.block_swap_args
+
+[48] WanVideoSetLoRAs  (WanVideoSetLoRAs)
+    widgets_values = []
+    in  model <- 22 WanVideoModelLoader.model
+    in  lora <- 171 WanVideoLoraSelectMulti.lora
+
+[171] WanVideoLoraSelectMulti  (WanVideoLoraSelectMulti)
+    widgets_values = ['WanVideo\\WanAnimate_relight_lora_fp16.safetensors', 1, 'WanVideo\\Lightx2v\\lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors', 1.2, 'none', 1, 'none', 1, 'none', 1, False, False]
+    in  prev_lora: (none)
+    in  blocks: (none)
+
+[178] OnnxDetectionModelLoader  (OnnxDetectionModelLoader)
+    widgets_values = ['vitpose-l-wholebody.onnx', 'onnx\\yolov10m.onnx', 'CUDAExecutionProvider']
+
+[180] GetImageSizeAndCount  (GetImageSizeAndCount)
+    widgets_values = []
+    in  image <- 144 SetNode.*
+
+[173] DrawViTPose  (DrawViTPose)
+    widgets_values = [832, 480, 16, -1, -1, 'True']
+    in  pose_data <- 172 PoseAndFaceDetection.pose_data
+    in  width <- 180 GetImageSizeAndCount.width
+    in  height <- 180 GetImageSizeAndCount.height
+
+[75] VHS_VideoCombine  (VHS_VideoCombine)
+    widgets_values = {'frame_rate': 16, 'loop_count': 0, 'filename_prefix': 'WanVideo2_1_T2V', 'format': 'video...
+    in  images <- 130 SetNode.IMAGE
+    in  audio: (none)
+    in  meta_batch: (none)
+    in  vae: (none)
+
+[181] VHS_VideoCombine  (VHS_VideoCombine)
+    widgets_values = {'frame_rate': 16, 'loop_count': 0, 'filename_prefix': 'WanVideo2_1_T2V', 'format': 'video...
+    in  images <- 184 SetNode.IMAGE
+    in  audio: (none)
+    in  meta_batch: (none)
+    in  vae: (none)
+
+[174] VHS_VideoCombine  (VHS_VideoCombine)
+    widgets_values = {'frame_rate': 16, 'loop_count': 0, 'filename_prefix': 'vitpose', 'format': 'video/h264-mp...
+    in  images <- 183 SetNode.IMAGE
+    in  audio: (none)
+    in  meta_batch: (none)
+    in  vae: (none)
+
+[172] PoseAndFaceDetection  (PoseAndFaceDetection)
+    widgets_values = [832, 480]
+    in  model <- 178 OnnxDetectionModelLoader.model
+    in  images <- 180 GetImageSizeAndCount.image
+    in  retarget_image: (none)
+    in  width <- 180 GetImageSizeAndCount.width
+    in  height <- 180 GetImageSizeAndCount.height
+
+[27] WanVideoSampler  (WanVideoSampler)
+    widgets_values = [4, 1, 5, 42, 'fixed', True, 'dpm++_sde', 0, 1, '', 'comfy', 0, -1, False]
+    in  model <- 50 WanVideoSetBlockSwap.model
+    in  image_embeds <- 62 WanVideoAnimateEmbeds.image_embeds
+    in  text_embeds <- 65 WanVideoTextEncodeCached.text_embeds
+    in  samples: (none)
+    in  feta_args: (none)
+    in  context_options: (none)
+    in  cache_args: (none)
+    in  flowedit_args: (none)
+    in  slg_args: (none)
+    in  loop_args: (none)
+    in  experimental_args: (none)
+    in  sigmas: (none)
+    in  unianimate_poses: (none)
+    in  fantasytalking_embeds: (none)
+    in  uni3c_embeds: (none)
+    in  multitalk_embeds: (none)
+    in  freeinit_args: (none)
+
+[30] VHS_VideoCombine  (VHS_VideoCombine)
+    widgets_values = {'frame_rate': 16, 'loop_count': 0, 'filename_prefix': 'Wanimate', 'format': 'video/h264-m...
+    in  images <- 66 ImageConcatMulti.images
+    in  audio <- 63 VHS_LoadVideo.audio
+    in  meta_batch: (none)
+    in  vae: (none)
