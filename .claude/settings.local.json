@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud compute *)",
+      "Bash(gcloud storage *)",
+      "Bash(python -c \"import json;d=json.load\\(open\\('workflow_qi_pipeline.json'\\)\\);[print\\(k, d[k].get\\('class_type'\\), '|', d[k].get\\('_meta',{}\\).get\\('title',''\\)\\) for k in sorted\\(d, key=lambda x:int\\(x\\) if x.isdigit\\(\\) else 0\\)]\")",
+      "Bash(python -c ' *)",
+      "Bash(python -m py_compile app_server.py)",
+      "Bash(bash -n startup.sh)",
+      "Bash(python -m py_compile stage4_comfyui_render.py)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,nb_frames,duration -of default=noprint_wrappers=1 source.mp4)",
+      "Bash(bash -n run_pipeline.sh)",
+      "Bash(python -m py_compile stage4_comfyui_render.py app_server.py stage3_controlnet_preprocess.py)",
+      "Bash(node -c web/app.js)",
+      "Bash(echo \"---EXIT:$?---\")",
+      "Bash(python -c \"import json; json.load\\(open\\('workflow_qi_pipeline.json'\\)\\); print\\('workflow JSON: OK'\\)\")",
+      "Bash(python -m py_compile stage4_comfyui_render.py app_server.py)",
+      "Bash(node -e \"require\\('fs'\\).readFileSync\\('web/app.js','utf8'\\); console.log\\('app.js read: OK'\\)\")",
+      "Bash(python -c \"print\\('node not used'\\)\")",
+      "Bash(gsutil ls *)"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Qi Pipeline Idle Watchdog — stops the VM after sustained idle to prevent billing leaks
+After=network.target
+
+[Service]
+Type=oneshot
+Environment=PIPELINE_ROOT=/opt/qi-pipeline
+Environment=IDLE_CHECK_INTERVAL_MIN=5
+Environment=IDLE_SHUTDOWN_MINUTES=30
+Environment=GPU_IDLE_THRESHOLD_PCT=5
+ExecStart=/bin/bash /opt/qi-pipeline/scripts/qi_idle_watchdog.sh

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qi Kinematic Director — Orchestrator Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="glow-bg-orange"></div>
+    <div class="glow-bg-cyan"></div>
+
+    <div class="dashboard-container">
+        <!-- HEADER -->
+        <header class="main-header">
+            <div class="logo-area">
+                <div class="vortex-icon"></div>
+                <div class="brand">
+                    <h1>QI KINEMATIC DIRECTOR</h1>
+                    <p class="subtitle">Bio-Digital Mocap-to-Video Orchestration Studio</p>
+                </div>
+            </div>
+            <div class="connection-status">
+                <span class="status-dot pulsing-green"></span>
+                <span class="status-text">Connected to GPU Director</span>
+            </div>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- LEFT COLUMN: INPUTS & PARAMETERS -->
+            <section class="control-panel glass-card">
+                <div class="card-header">
+                    <h2>Pipeline Inputs</h2>
+                    <span class="step-num">01</span>
+                </div>
+
+                <!-- File upload grids -->
+                <div class="upload-section">
+                    <div class="upload-box" id="video-upload-box">
+                        <input type="file" id="video-input" accept="video/mp4" style="display:none">
+                        <div class="upload-content">
+                            <div class="upload-icon video-icon"></div>
+                            <span class="upload-title">Performer Video (.mp4)</span>
+                            <span class="upload-desc">Drag & drop or click to upload</span>
+                            <span class="file-name" id="video-file-name">No file selected</span>
+                        </div>
+                        <div class="upload-progress-bar" id="video-upload-progress"></div>
+                    </div>
+
+                    <div class="upload-box" id="image-upload-box">
+                        <input type="file" id="image-input" accept="image/png,image/jpeg" style="display:none">
+                        <div class="upload-content">
+                            <div class="upload-icon image-icon"></div>
+                            <span class="upload-title">Reference Image (.png)</span>
+                            <span class="upload-desc">Drag & drop or click to upload</span>
+                            <span class="file-name" id="image-file-name">No file selected</span>
+                        </div>
+                        <div class="upload-progress-bar" id="image-upload-progress"></div>
+                    </div>
+                </div>
+
+                <div class="card-header" style="margin-top: 2rem;">
+                    <h2>Tuning Parameters</h2>
+                    <span class="step-num">02</span>
+                </div>
+
+                <!-- Parameters sliders -->
+                <div class="params-section">
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-sigma">Blender Smooth Sigma</label>
+                            <span class="param-value" id="val-sigma">2.0</span>
+                        </div>
+                        <input type="range" id="param-sigma" min="0.5" max="5.0" step="0.1" value="2.0">
+                        <span class="param-help">Controls joint-stabilization smoothing strength.</span>
+                    </div>
+
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-steps">Diffusion Steps</label>
+                            <span class="param-value" id="val-steps">30</span>
+                        </div>
+                        <input type="range" id="param-steps" min="15" max="50" step="1" value="30">
+                        <span class="param-help">Number of denoising inference steps for Wan 2.1.</span>
+                    </div>
+
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-cfg">CFG Guidance Scale</label>
+                            <span class="param-value" id="val-cfg">5.5</span>
+                        </div>
+                        <input type="range" id="param-cfg" min="2.0" max="10.0" step="0.5" value="5.5">
+                        <span class="param-help">Adherence to text prompt conditioning.</span>
+                    </div>
+
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-length">Video Length</label>
+                            <span class="param-value" id="val-length">Full clip</span>
+                        </div>
+                        <select id="param-length">
+                            <option value="33">Short — up to 33 frames</option>
+                            <option value="49">Medium — up to 49 frames</option>
+                            <option value="65">Long — up to 65 frames</option>
+                            <option value="81" selected>Full clip — up to 81 frames</option>
+                        </select>
+                        <span class="param-help">How much of your clip to render. "Full clip" uses the whole video (auto-capped to ~81 frames for the GPU). Lower values trim it shorter.</span>
+                    </div>
+
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-fps">Motion Smoothness</label>
+                            <span class="param-value" id="val-fps">30 fps</span>
+                        </div>
+                        <select id="param-fps">
+                            <option value="24">Cinematic — 24 fps</option>
+                            <option value="30" selected>Smooth — 30 fps</option>
+                            <option value="48">Very smooth — 48 fps</option>
+                            <option value="60">Ultra smooth — 60 fps</option>
+                        </select>
+                        <span class="param-help">RIFE interpolates the rendered keyframes up to this playback rate, so long clips look fluid instead of choppy. Duration is unchanged.</span>
+                    </div>
+                </div>
+
+                <div class="card-header" style="margin-top: 2rem;">
+                    <h2>Creative Direction</h2>
+                    <span class="step-num">02b</span>
+                </div>
+
+                <div class="params-section">
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-prompt">Prompt</label>
+                        </div>
+                        <textarea id="param-prompt" rows="5" class="prompt-input"
+                            placeholder="Describe the look, style, lighting, and energy of the render..."></textarea>
+                        <span class="param-help">What the AI paints. The motion follows your video; this controls the style.</span>
+                    </div>
+
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="param-negative">Negative Prompt</label>
+                        </div>
+                        <textarea id="param-negative" rows="3" class="prompt-input"
+                            placeholder="What to avoid (artifacts, clothing, deformities)..."></textarea>
+                        <span class="param-help">Things to keep out of the render.</span>
+                    </div>
+                </div>
+
+                <button class="launch-btn" id="launch-btn">
+                    <span class="btn-text">LAUNCH QI TRANSMUTATION</span>
+                    <span class="btn-glow"></span>
+                </button>
+            </section>
+
+            <!-- RIGHT COLUMN: FLOW & OUTPUTS -->
+            <section class="output-panel">
+                <!-- PIPELINE FLOW MAP -->
+                <div class="flow-map-container glass-card">
+                    <div class="card-header">
+                        <h2>Pipeline Execution Status</h2>
+                        <span class="step-num">03</span>
+                    </div>
+
+                    <div class="pipeline-nodes">
+                        <!-- Node 1: WHAM -->
+                        <div class="node-card" id="node-wham">
+                            <div class="node-icon wham-node-icon"></div>
+                            <span class="node-title">Stage 1: WHAM</span>
+                            <span class="node-status">Waiting</span>
+                        </div>
+                        <div class="connector" id="conn-1"></div>
+
+                        <!-- Node 2: Blender -->
+                        <div class="node-card" id="node-blender">
+                            <div class="node-icon blender-node-icon"></div>
+                            <span class="node-title">Stage 2: Blender</span>
+                            <span class="node-status">Waiting</span>
+                        </div>
+                        <div class="connector" id="conn-2"></div>
+
+                        <!-- Node 3: ControlNet -->
+                        <div class="node-card" id="node-controlnet">
+                            <div class="node-icon control-node-icon"></div>
+                            <span class="node-title">Stage 3: Preprocess</span>
+                            <span class="node-status">Waiting</span>
+                        </div>
+                        <div class="connector" id="conn-3"></div>
+
+                        <!-- Node 4: ComfyUI -->
+                        <div class="node-card" id="node-comfyui">
+                            <div class="node-icon comfy-node-icon"></div>
+                            <span class="node-title">Stage 4: ComfyUI</span>
+                            <span class="node-status">Waiting</span>
+                        </div>
+                    </div>
+
+                    <!-- Progress bar -->
+                    <div class="overall-progress-container">
+                        <div class="progress-info">
+                            <span class="progress-label" id="progress-label">System Idle</span>
+                            <span class="progress-pct" id="progress-pct">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-bar" id="progress-bar"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LIVE CONSOLE LOGS -->
+                <div class="console-container glass-card">
+                    <div class="console-header">
+                        <div class="console-title">
+                            <span class="console-dot-red"></span>
+                            <span class="console-dot-yellow"></span>
+                            <span class="console-dot-green"></span>
+                            <h3>Director Log Stream</h3>
+                        </div>
+                        <button class="console-clear-btn" id="clear-logs-btn">Clear Logs</button>
+                    </div>
+                    <div class="console-body" id="console-stream">
+                        <div class="log-line system-log">[SYSTEM] Ready. Upload files and press 'Launch' to begin.</div>
+                    </div>
+                </div>
+
+                <!-- FINAL VIDEO DISPLAY -->
+                <div class="video-output-container glass-card" id="video-container" style="display:none">
+                    <div class="card-header">
+                        <h2>Neural Render Output</h2>
+                        <span class="step-num">04</span>
+                    </div>
+                    <div class="video-wrapper">
+                        <video id="output-video" controls>
+                            <source src="" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+                    <div class="output-actions">
+                        <a href="/output/final.mp4" download class="download-btn">DOWNLOAD NEURAL VIDEO</a>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

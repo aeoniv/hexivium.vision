@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Qi Pipeline idle watchdog every 5 minutes
+
+[Timer]
+# First check 5 min after boot, then every 5 min thereafter.
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=qi-idle-watchdog.service
+
+[Install]
+WantedBy=timers.target
