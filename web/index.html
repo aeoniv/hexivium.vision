@@ -60,6 +60,29 @@
                     </div>
                 </div>
 
+                <div class="card-header" style="margin-top: 1.5rem;">
+                    <h2>Or Generate an Avatar</h2>
+                    <span class="step-num">01b</span>
+                </div>
+                <div class="params-section">
+                    <div class="param-row">
+                        <div class="param-info">
+                            <label for="avatar-prompt">Avatar Prompt</label>
+                        </div>
+                        <textarea id="avatar-prompt" rows="3" class="prompt-input"
+                            placeholder="Describe the character to generate as the reference — full-body, neutral pose, plain background works best..."></textarea>
+                        <span class="param-help">Generates the reference avatar with SDXL — no upload needed. The result becomes your reference image.</span>
+                    </div>
+                    <button class="launch-btn" id="generate-avatar-btn" style="margin-top:0.5rem;">
+                        <span class="btn-text">GENERATE AVATAR</span>
+                        <span class="btn-glow"></span>
+                    </button>
+                    <div id="avatar-preview" style="display:none; margin-top:1rem;">
+                        <img id="avatar-preview-img" src="" alt="Generated avatar"
+                            style="max-width:100%; border-radius: var(--border-radius-md, 8px);">
+                    </div>
+                </div>
+
                 <div class="card-header" style="margin-top: 2rem;">
                     <h2>Tuning Parameters</h2>
                     <span class="step-num">02</span>

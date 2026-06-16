@@ -31,6 +31,38 @@ pipeline_thread: Optional[threading.Thread] = None
 pipeline_process: Optional[subprocess.Popen] = None
 pipeline_running = False
 
+# Global state for the avatar (text-to-image) generator
+avatar_thread: Optional[threading.Thread] = None
+avatar_status = {"running": False, "ready": False, "error": "", "log": ""}
+
+
+def generate_avatar_worker(prompt: str, negative: str):
+    """Run generate_image.py to produce the reference avatar from a text prompt."""
+    global avatar_status
+    avatar_status = {"running": True, "ready": False, "error": "", "log": ""}
+    env = os.environ.copy()
+    env["PIPELINE_ROOT"] = str(PIPELINE_ROOT)
+    cmd = [
+        "python", str(PIPELINE_ROOT / "scripts" / "generate_image.py"),
+        "--workflow", str(PIPELINE_ROOT / "scripts" / "workflows" / "txt2img_sdxl.json"),
+        "--output", str(INPUT_DIR / "reference_image.png"),
+    ]
+    if prompt:
+        cmd += ["--prompt", prompt]
+    if negative:
+        cmd += ["--negative", negative]
+    try:
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=900)
+        avatar_status["log"] = (result.stdout or "")[-2000:] + (result.stderr or "")[-2000:]
+        if result.returncode == 0 and (INPUT_DIR / "reference_image.png").exists():
+            avatar_status["ready"] = True
+        else:
+            avatar_status["error"] = "Avatar generation failed — see log."
+    except Exception as e:
+        avatar_status["error"] = str(e)
+    finally:
+        avatar_status["running"] = False
+
 def run_pipeline_worker(
     sigma: float,
     steps: int,
@@ -278,6 +310,31 @@ async def upload_image(file: UploadFile = File(...)):
         return {"filename": file.filename, "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/generate-avatar")
+def generate_avatar(prompt: str = Form(""), negative_prompt: str = Form("")):
+    """Generate the reference avatar from a text prompt (SDXL text-to-image)."""
+    global avatar_thread
+    if avatar_status["running"]:
+        raise HTTPException(status_code=400, detail="Avatar generation already running.")
+    if pipeline_running:
+        raise HTTPException(status_code=400, detail="A render is running — wait for it to finish.")
+    avatar_thread = threading.Thread(
+        target=generate_avatar_worker, args=(prompt.strip(), negative_prompt.strip()), daemon=True
+    )
+    avatar_thread.start()
+    return {"status": "started"}
+
+@app.get("/api/avatar-status")
+def get_avatar_status():
+    return avatar_status
+
+@app.get("/input/reference_image.png")
+def get_reference_image():
+    img = INPUT_DIR / "reference_image.png"
+    if not img.exists():
+        raise HTTPException(status_code=404, detail="No reference image.")
+    return FileResponse(img, media_type="image/png")
 
 @app.get("/output/final.mp4")
 def get_final_video():

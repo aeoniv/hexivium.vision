@@ -24,7 +24,18 @@
       "Bash(python -c \"import json; json.load\\(open\\('workflow_qi_pipeline.json'\\)\\); print\\('JSON OK'\\)\")",
       "Bash(python -c \"import json; [json.load\\(open\\('workflows/'+f\\)\\) for f in ['wan_animate.json','fun_control.json']]; print\\('OK'\\)\")",
       "mcp__visualize__read_me",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(powershell -Command \"\\(Test-NetConnection -ComputerName 35.234.42.14 -Port 22\\).TcpTestSucceeded\")",
+      "Bash(powershell -Command \"\\(Test-NetConnection -ComputerName 35.234.42.14 -Port 8000\\).TcpTestSucceeded\")",
+      "Bash(curl -s -m 10 -o NUL -w 'HTTP %{http_code}\\\\n' http://35.234.42.14:8000/)",
+      "Bash(python -m py_compile generate_image.py app_server.py)",
+      "Bash(python -c \"import json; w=json.load\\(open\\('workflows/txt2img_sdxl.json'\\)\\); print\\('classes:', sorted\\(set\\(n['class_type'] for n in w.values\\(\\)\\)\\)\\)\")",
+      "Bash(node -e \"new Function\\(require\\('fs'\\).readFileSync\\('web/app.js','utf8'\\)\\); console.log\\('OK'\\)\")",
+      "WebSearch",
+      "WebFetch(domain:sonusahani.com)",
+      "WebFetch(domain:www.runcomfy.com)",
+      "Bash(python -c \"import json; w=json.load\\(open\\('workflows/wan_animate.json'\\)\\); print\\('JSON OK, node31:', w['31']['class_type'], '| decode reads:', w['40']['inputs']['samples']\\)\")",
+      "Bash(python -c \"import json; w=json.load\\(open\\('workflows/wan_animate.json'\\)\\); print\\('JSON OK; node31 gone:', '31' not in w, '| decode reads:', w['40']['inputs']['samples']\\)\")"
     ]
   }
 }

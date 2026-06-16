@@ -281,6 +281,15 @@ if [ ! -f "${CLIP_MODEL}" ]; then
         2>/dev/null || echo "[!] CLIP Vision download failed"
 fi
 
+# RealVisXL V5.0 — photoreal SDXL finetune for reference avatar generation (~6.5GB)
+mkdir -p "${MODELS_DIR}/checkpoints"
+SDXL_MODEL="${MODELS_DIR}/checkpoints/RealVisXL_V5.0_fp16.safetensors"
+if [ ! -f "${SDXL_MODEL}" ]; then
+    echo "  Downloading RealVisXL V5.0..."
+    hf download SG161222/RealVisXL_V5.0 RealVisXL_V5.0_fp16.safetensors \
+        --local-dir "${MODELS_DIR}/checkpoints" 2>/dev/null || echo "[!] RealVisXL download failed"
+fi
+
 # ============================================================================
 # 7. DEPLOY PIPELINE SCRIPTS
 # ============================================================================
@@ -289,6 +298,7 @@ gsutil -q cp "${GCS_BUCKET}/scripts/stage1_wham_extract.py"         "${PIPELINE_
 gsutil -q cp "${GCS_BUCKET}/scripts/stage2_blender_smooth.py"       "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/stage3_controlnet_preprocess.py" "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/stage4_comfyui_render.py"       "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
+gsutil -q cp "${GCS_BUCKET}/scripts/generate_image.py"             "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 mkdir -p "${PIPELINE_ROOT}/scripts/workflows"
 gsutil -q -m cp "${GCS_BUCKET}/scripts/workflows/*"                 "${PIPELINE_ROOT}/scripts/workflows/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/run_pipeline.sh"                "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true

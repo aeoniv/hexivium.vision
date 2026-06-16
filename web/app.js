@@ -32,6 +32,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (paramPrompt && !paramPrompt.value) paramPrompt.value = DEFAULT_PROMPT;
     if (paramNegative && !paramNegative.value) paramNegative.value = DEFAULT_NEGATIVE;
 
+    const avatarPrompt = document.getElementById("avatar-prompt");
+    const generateAvatarBtn = document.getElementById("generate-avatar-btn");
+    const avatarPreview = document.getElementById("avatar-preview");
+    const avatarPreviewImg = document.getElementById("avatar-preview-img");
+
     const launchBtn = document.getElementById("launch-btn");
     const progressBar = document.getElementById("progress-bar");
     const progressPct = document.getElementById("progress-pct");
@@ -260,6 +265,49 @@ document.addEventListener("DOMContentLoaded", () => {
 
     clearLogsBtn.addEventListener("click", () => {
         consoleStream.innerHTML = "";
+    });
+
+    // ── Generate Avatar (SDXL text-to-image) ────────────────────────────────
+    let avatarPoll = null;
+    generateAvatarBtn.addEventListener("click", () => {
+        const btnText = generateAvatarBtn.querySelector(".btn-text");
+        generateAvatarBtn.setAttribute("disabled", "true");
+        btnText.textContent = "GENERATING AVATAR...";
+        appendLog("[SYSTEM] Generating reference avatar (SDXL)...", "system-log");
+
+        const fd = new FormData();
+        fd.append("prompt", avatarPrompt.value.trim());
+
+        fetch("/api/generate-avatar", { method: "POST", body: fd })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status !== "started") {
+                    throw new Error(data.detail || "could not start");
+                }
+                avatarPoll = setInterval(() => {
+                    fetch("/api/avatar-status").then(r => r.json()).then(s => {
+                        if (s.running) return;
+                        clearInterval(avatarPoll);
+                        generateAvatarBtn.removeAttribute("disabled");
+                        btnText.textContent = "GENERATE AVATAR";
+                        if (s.ready) {
+                            avatarPreviewImg.src = "/input/reference_image.png?t=" + Date.now();
+                            avatarPreview.style.display = "block";
+                            isImageUploaded = true;
+                            imageFileName.textContent = "Generated avatar (ready)";
+                            appendLog("[SUCCESS] Avatar generated — set as reference.", "success-log");
+                            checkReadyState();
+                        } else {
+                            appendLog(`[ERROR] Avatar generation failed: ${s.error || "see logs"}`, "error-log");
+                        }
+                    });
+                }, 2500);
+            })
+            .catch(err => {
+                generateAvatarBtn.removeAttribute("disabled");
+                btnText.textContent = "GENERATE AVATAR";
+                appendLog(`[ERROR] Avatar generation request failed: ${err}`, "error-log");
+            });
     });
 
     // Polling System
