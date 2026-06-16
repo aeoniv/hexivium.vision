@@ -79,19 +79,19 @@
                     <div class="param-row">
                         <div class="param-info">
                             <label for="param-steps">Diffusion Steps</label>
-                            <span class="param-value" id="val-steps">30</span>
+                            <span class="param-value" id="val-steps">4</span>
                         </div>
-                        <input type="range" id="param-steps" min="15" max="50" step="1" value="30">
-                        <span class="param-help">Number of denoising inference steps for Wan 2.1.</span>
+                        <input type="range" id="param-steps" min="2" max="12" step="1" value="4">
+                        <span class="param-help">Wan-Animate uses a 4-step distill LoRA — keep this low (≈4). Higher just wastes time.</span>
                     </div>
 
                     <div class="param-row">
                         <div class="param-info">
                             <label for="param-cfg">CFG Guidance Scale</label>
-                            <span class="param-value" id="val-cfg">5.5</span>
+                            <span class="param-value" id="val-cfg">1.0</span>
                         </div>
-                        <input type="range" id="param-cfg" min="2.0" max="10.0" step="0.5" value="5.5">
-                        <span class="param-help">Adherence to text prompt conditioning.</span>
+                        <input type="range" id="param-cfg" min="1.0" max="2.0" step="0.5" value="1.0">
+                        <span class="param-help">The distill LoRA needs CFG ≈ 1; higher values break it and double render time.</span>
                     </div>
 
                     <div class="param-row">

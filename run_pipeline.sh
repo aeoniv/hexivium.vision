@@ -214,13 +214,14 @@ echo "│  STAGE 4: ComfyUI — Wan 2.1 14B Neural Render              │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE4_START=$(date +%s)
 
-# Square the reference WITHOUT stretching (pad to a square canvas), so a tall
-# portrait avatar isn't squashed wider ("fat") when scaled to the square gen size.
+# Pad the reference to the GENERATION aspect ratio WITHOUT stretching, so the
+# avatar keeps true proportions (no "fat" squash) whether the gen frame is
+# square, portrait, or landscape.
 REF_SQUARE="${OUTPUT_DIR}/reference_square.png"
 ffmpeg -y -loglevel error -i "${INPUT_DIR}/reference_image.png" \
-    -vf "pad=w='max(iw,ih)':h='max(iw,ih)':x='(ow-iw)/2':y='(oh-ih)/2':color=white" \
+    -vf "pad=w='max(iw,ih*${GEN_W:-1}/${GEN_H:-1})':h='max(ih,iw*${GEN_H:-1}/${GEN_W:-1})':x='(ow-iw)/2':y='(oh-ih)/2':color=white" \
     "${REF_SQUARE}" || cp "${INPUT_DIR}/reference_image.png" "${REF_SQUARE}"
-echo "[Stage4] Reference padded to square: ${REF_SQUARE}"
+echo "[Stage4] Reference padded to ${GEN_W}x${GEN_H} aspect: ${REF_SQUARE}"
 
 python "${SCRIPTS_DIR}/stage4_comfyui_render.py" \
     --workflow "${WORKFLOW_PATH:-${SCRIPTS_DIR}/workflow_qi_pipeline.json}" \

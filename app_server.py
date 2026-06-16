@@ -124,8 +124,8 @@ def run_pipeline_worker(
 @app.post("/api/run")
 def start_pipeline(
     sigma: float = Form(2.0),
-    steps: int = Form(30),
-    cfg: float = Form(5.5),
+    steps: int = Form(4),
+    cfg: float = Form(1.0),
     num_frames: int = Form(49),
     target_fps: int = Form(30),
     prompt: str = Form(""),
@@ -135,10 +135,11 @@ def start_pipeline(
     if pipeline_running:
         raise HTTPException(status_code=400, detail="Pipeline is already running.")
 
-    # Clamp length to the single-pass range an L4 (24GB) can render.
-    # Wan prefers 4n+1 frame counts; snap to the nearest valid value.
-    ALLOWED_FRAMES = [33, 49, 65, 81]
-    num_frames = min(ALLOWED_FRAMES, key=lambda v: abs(v - num_frames))
+    # HARD CLAMP for the Wan-Animate + lightx2v setup: the distill LoRA is tuned
+    # for ~4 steps at CFG 1. Letting the UI send 30 steps / CFG 5.5 makes renders
+    # ~15x slower AND degrades quality, so cap them regardless of what's posted.
+    steps = max(2, min(int(steps), 12))
+    cfg = max(1.0, min(float(cfg), 2.0))
 
     # Snap smoothness to a RIFE-friendly playback rate.
     ALLOWED_FPS = [24, 30, 48, 60]
