@@ -39,6 +39,32 @@ CONDA_ROOT="/opt/miniconda3"
 BLENDER_BIN="${PIPELINE_ROOT}/engines/blender/blender"
 COMFYUI_DIR="${PIPELINE_ROOT}/engines/ComfyUI"
 
+# ── Pipeline mode ───────────────────────────────────────────────────────────
+# Two render engines share this orchestrator. Select with PIPELINE_MODE:
+#   animate    — Wan2.2-Animate: faithfully animates the uploaded reference photo
+#                with the driving video's motion (identity preserved).
+#   funcontrol — Wan2.1 Fun Control: generates a NEW subject from the text prompt,
+#                steered by DensePose/DWPose maps (prompt-driven / stylized).
+PIPELINE_MODE="${PIPELINE_MODE:-animate}"
+case "${PIPELINE_MODE}" in
+  animate)
+    MODE_WORKFLOW="${SCRIPTS_DIR}/workflows/wan_animate.json"
+    RUN_DENSEPOSE=0                                     # pose+face detection is in-graph
+    STAGE4_FRAMES_DIR="${OUTPUT_DIR}/renders"          # raw driving frames
+    ;;
+  funcontrol)
+    MODE_WORKFLOW="${SCRIPTS_DIR}/workflows/fun_control.json"
+    RUN_DENSEPOSE=1                                     # DensePose/DWPose control maps required
+    STAGE4_FRAMES_DIR="${OUTPUT_DIR}/controlnet_maps/composite"
+    ;;
+  *)
+    echo "[PIPELINE] ERROR: unknown PIPELINE_MODE='${PIPELINE_MODE}' (expected: animate | funcontrol)"
+    exit 1
+    ;;
+esac
+export PIPELINE_MODE
+echo "[PIPELINE] Mode: ${PIPELINE_MODE}  (workflow: ${MODE_WORKFLOW})"
+
 # ── Trap: cleanup on failure ────────────────────────────────────────────────
 cleanup_on_failure() {
     local exit_code=$?
@@ -156,23 +182,32 @@ SRC_W=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
 SRC_H=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
     -of default=noprint_wrappers=1:nokey=1 "${SRC_VIDEO}")
 
-# Generation dims: preserve source aspect, target ~GEN_SIZE on the long edge,
-# rounded to a multiple of 16 (Wan requirement).
-GEN_SIZE="${GEN_SIZE:-640}"
-read GEN_W GEN_H < <(python -c "
+# Generation dims + extraction rate depend on the mode.
+if [ "${PIPELINE_MODE}" = "funcontrol" ]; then
+    # Fun Control: fixed 832x480; downsample so the whole clip fits in <=81 frames.
+    GEN_W=832; GEN_H=480
+    EXTRACT_FPS=$(python -c "
+n='${NATIVE_FPS}'.split('/'); nf=float(n[0])/float(n[1]) if len(n)>1 else float(n[0])
+d=float('${DURATION}')
+print(max(1, int(min(nf, 81.0/d))))
+")
+else
+    # Wan-Animate: preserve source aspect (target ~GEN_SIZE long edge, /16) and
+    # keep the real motion (extract at TARGET_EXTRACT_FPS, whole performance).
+    GEN_SIZE="${GEN_SIZE:-640}"
+    read GEN_W GEN_H < <(python -c "
 w,h=${SRC_W},${SRC_H}
 s=${GEN_SIZE}/max(w,h)
 print(max(16,int(round(w*s/16))*16), max(16,int(round(h*s/16))*16))
 ")
-export GEN_W GEN_H
-
-# Extract at the real motion rate (capped to TARGET_EXTRACT_FPS, never upsampling).
-EXTRACT_FPS=$(python -c "
+    EXTRACT_FPS=$(python -c "
 n='${NATIVE_FPS}'.split('/'); nf=float(n[0])/float(n[1]) if len(n)>1 else float(n[0])
 print(max(1, int(min(nf, ${TARGET_EXTRACT_FPS:-16}))))
 ")
+fi
+export GEN_W GEN_H
 echo "[Stage2] source: ${SRC_W}x${SRC_H} duration=${DURATION}s native_fps=${NATIVE_FPS}"
-echo "[Stage2] -> gen=${GEN_W}x${GEN_H} extract_fps=${EXTRACT_FPS}"
+echo "[Stage2] -> mode=${PIPELINE_MODE} gen=${GEN_W}x${GEN_H} extract_fps=${EXTRACT_FPS}"
 
 ffmpeg -y -loglevel error -i "${SRC_VIDEO}" \
     -vf "fps=${EXTRACT_FPS},scale=${GEN_W}:${GEN_H}:force_original_aspect_ratio=decrease,pad=${GEN_W}:${GEN_H}:(ow-iw)/2:(oh-ih)/2" \
@@ -197,10 +232,17 @@ echo "│  STAGE 3: ControlNet-Aux — DensePose + DWPose Maps          │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE3_START=$(date +%s)
 
-# Wan-Animate does its own pose + face detection INSIDE the Stage 4 ComfyUI graph
-# (PoseAndFaceDetection / DrawViTPose). The standalone DensePose/DWPose pass is no
-# longer needed — Stage 4 consumes the raw driving frames in ${OUTPUT_DIR}/renders.
-echo "[Stage3] Pose/face detection deferred to Stage 4 (Wan-Animate, in-graph)."
+# funcontrol mode needs DensePose/DWPose control maps; animate mode does pose+face
+# detection in-graph (Stage 4) and consumes the raw driving frames directly.
+if [ "${RUN_DENSEPOSE}" = "1" ]; then
+    rm -rf "${OUTPUT_DIR}/controlnet_maps"
+    python "${SCRIPTS_DIR}/stage3_controlnet_preprocess.py" \
+        --frames "${OUTPUT_DIR}/renders" \
+        --resolution 832 \
+        --device cuda
+else
+    echo "[Stage3] Skipped — Wan-Animate detects pose/face in-graph (Stage 4)."
+fi
 
 STAGE3_END=$(date +%s)
 echo "[PIPELINE] Stage 3 complete in $((STAGE3_END - STAGE3_START))s"
@@ -214,19 +256,24 @@ echo "│  STAGE 4: ComfyUI — Wan 2.1 14B Neural Render              │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE4_START=$(date +%s)
 
-# Pad the reference to the GENERATION aspect ratio WITHOUT stretching, so the
-# avatar keeps true proportions (no "fat" squash) whether the gen frame is
-# square, portrait, or landscape.
-REF_SQUARE="${OUTPUT_DIR}/reference_square.png"
-ffmpeg -y -loglevel error -i "${INPUT_DIR}/reference_image.png" \
-    -vf "pad=w='max(iw,ih*${GEN_W:-1}/${GEN_H:-1})':h='max(ih,iw*${GEN_H:-1}/${GEN_W:-1})':x='(ow-iw)/2':y='(oh-ih)/2':color=white" \
-    "${REF_SQUARE}" || cp "${INPUT_DIR}/reference_image.png" "${REF_SQUARE}"
-echo "[Stage4] Reference padded to ${GEN_W}x${GEN_H} aspect: ${REF_SQUARE}"
+# Reference handling differs per mode: Wan-Animate needs the reference padded to
+# the gen aspect (so the avatar keeps true proportions — no "fat" squash). Fun
+# Control only uses it as a weak CLIP hint, so it's passed through unchanged.
+if [ "${PIPELINE_MODE}" = "animate" ]; then
+    REF_IMAGE="${OUTPUT_DIR}/reference_square.png"
+    ffmpeg -y -loglevel error -i "${INPUT_DIR}/reference_image.png" \
+        -vf "pad=w='max(iw,ih*${GEN_W:-1}/${GEN_H:-1})':h='max(ih,iw*${GEN_H:-1}/${GEN_W:-1})':x='(ow-iw)/2':y='(oh-ih)/2':color=white" \
+        "${REF_IMAGE}" || cp "${INPUT_DIR}/reference_image.png" "${REF_IMAGE}"
+    echo "[Stage4] Reference padded to ${GEN_W}x${GEN_H} aspect: ${REF_IMAGE}"
+else
+    REF_IMAGE="${INPUT_DIR}/reference_image.png"
+fi
 
 python "${SCRIPTS_DIR}/stage4_comfyui_render.py" \
-    --workflow "${WORKFLOW_PATH:-${SCRIPTS_DIR}/workflow_qi_pipeline.json}" \
-    --reference-image "${REF_SQUARE}" \
-    --controlnet-maps "${OUTPUT_DIR}/renders" \
+    --mode "${PIPELINE_MODE}" \
+    --workflow "${WORKFLOW_PATH:-${MODE_WORKFLOW}}" \
+    --reference-image "${REF_IMAGE}" \
+    --controlnet-maps "${STAGE4_FRAMES_DIR}" \
     --output "${OUTPUT_DIR}/final.mp4" \
     --fps "${EXTRACT_FPS:-24}" \
     --target-fps "${TARGET_FPS:-30}" \

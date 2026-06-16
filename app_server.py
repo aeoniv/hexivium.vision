@@ -39,14 +39,19 @@ def run_pipeline_worker(
     prompt: str,
     negative_prompt: str,
     target_fps: int,
+    mode: str,
 ):
     global pipeline_running, pipeline_process
     pipeline_running = True
 
-    # Apply the UI's parameters to a PER-RUN COPY of the workflow, leaving the
-    # canonical workflow_qi_pipeline.json pristine (so it never drifts from the
-    # repo). The copy's path is passed to the pipeline via WORKFLOW_PATH.
-    canonical_workflow = PIPELINE_ROOT / "scripts" / "workflow_qi_pipeline.json"
+    # Apply the UI's parameters to a PER-RUN COPY of the mode's workflow, leaving
+    # the canonical workflow pristine (so it never drifts from the repo). The copy
+    # path is passed to the pipeline via WORKFLOW_PATH.
+    WORKFLOWS = {
+        "animate": "workflows/wan_animate.json",
+        "funcontrol": "workflows/fun_control.json",
+    }
+    canonical_workflow = PIPELINE_ROOT / "scripts" / WORKFLOWS.get(mode, WORKFLOWS["animate"])
     active_workflow = PIPELINE_ROOT / "tmp" / "workflow_active.json"
     workflow_ready = False
     if canonical_workflow.exists():
@@ -84,6 +89,7 @@ def run_pipeline_worker(
     env["SKIP_SHUTDOWN"] = "1"
     env["PIPELINE_ROOT"] = str(PIPELINE_ROOT)
     env["TARGET_FPS"] = str(target_fps)
+    env["PIPELINE_MODE"] = mode
     # Point the pipeline at the per-run workflow copy (falls back to the
     # canonical file inside run_pipeline.sh if preparation failed).
     if workflow_ready:
@@ -128,6 +134,7 @@ def start_pipeline(
     cfg: float = Form(1.0),
     num_frames: int = Form(49),
     target_fps: int = Form(30),
+    mode: str = Form("animate"),
     prompt: str = Form(""),
     negative_prompt: str = Form("")
 ):
@@ -135,11 +142,19 @@ def start_pipeline(
     if pipeline_running:
         raise HTTPException(status_code=400, detail="Pipeline is already running.")
 
-    # HARD CLAMP for the Wan-Animate + lightx2v setup: the distill LoRA is tuned
-    # for ~4 steps at CFG 1. Letting the UI send 30 steps / CFG 5.5 makes renders
-    # ~15x slower AND degrades quality, so cap them regardless of what's posted.
-    steps = max(2, min(int(steps), 12))
-    cfg = max(1.0, min(float(cfg), 2.0))
+    if mode not in ("animate", "funcontrol"):
+        mode = "animate"
+
+    # Per-mode steps/CFG clamp — the two engines want opposite settings:
+    #   animate    — lightx2v distill LoRA is tuned for ~4 steps at CFG 1; sending
+    #                30 steps / CFG 5.5 makes renders ~15x slower AND degrades them.
+    #   funcontrol — needs real guidance (CFG ~5) and full steps for the prompt.
+    if mode == "animate":
+        steps = max(2, min(int(steps), 12))
+        cfg = max(1.0, min(float(cfg), 2.0))
+    else:
+        steps = max(15, min(int(steps), 50))
+        cfg = max(2.0, min(float(cfg), 10.0))
 
     # Snap smoothness to a RIFE-friendly playback rate.
     ALLOWED_FPS = [24, 30, 48, 60]
@@ -147,7 +162,7 @@ def start_pipeline(
 
     pipeline_thread = threading.Thread(
         target=run_pipeline_worker,
-        args=(sigma, steps, cfg, num_frames, prompt, negative_prompt, target_fps),
+        args=(sigma, steps, cfg, num_frames, prompt, negative_prompt, target_fps, mode),
         daemon=True
     )
     pipeline_thread.start()

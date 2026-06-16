@@ -1,6 +1,35 @@
 # Qi Pipeline Director
 
-**Bio-Digital Kinematic Pipeline** — Automated end-to-end processing of bare-skin human motion capture into physics-consistent neural video with meridian energy field visualization.
+**Bio-Digital Kinematic Pipeline** — turns a performer video + a character image into neural video.
+
+## Render Modes
+
+The pipeline has two interchangeable render engines, selected with `PIPELINE_MODE`
+(CLI) or the **Render Mode** dropdown in the web UI:
+
+| Mode | Engine | What it does | Use it for |
+|------|--------|--------------|------------|
+| **`animate`** (default) | Wan2.2-Animate-14B | Faithfully **animates your reference photo** with the driving video's motion — identity preserved | Avatar/character animation |
+| **`funcontrol`** | Wan2.1 Fun Control | **Generates a new subject from the text prompt**, steered by DensePose/DWPose pose maps | Stylized / prompt-driven generation (energy beings, creatures, restyles) |
+
+Key differences (handled automatically per mode):
+
+| | `animate` | `funcontrol` |
+|---|---|---|
+| Workflow | `workflows/wan_animate.json` | `workflows/fun_control.json` |
+| Stage 3 (DensePose) | skipped (pose/face in-graph) | runs |
+| Frame extraction | full motion, source aspect | ≤81 frames, 832×480 |
+| Sampler | 4 steps / CFG 1 (lightx2v) | ~30 steps / CFG ~5.5 |
+
+```bash
+# CLI — animate (default)
+sudo bash run_pipeline.sh
+# CLI — fun control (stylized)
+PIPELINE_MODE=funcontrol sudo -E bash run_pipeline.sh
+```
+
+The Architecture diagram below describes the `funcontrol` path; `animate` replaces
+ControlNet-Aux + the Fun Control render with in-graph pose/face detection feeding Wan-Animate.
 
 ## Architecture
 

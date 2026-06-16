@@ -69,6 +69,18 @@
                 <div class="params-section">
                     <div class="param-row">
                         <div class="param-info">
+                            <label for="param-mode">Render Mode</label>
+                            <span class="param-value" id="val-mode">Faithful</span>
+                        </div>
+                        <select id="param-mode">
+                            <option value="animate" selected>Faithful — animate the reference (Wan-Animate)</option>
+                            <option value="funcontrol">Stylized — generate from prompt (Fun Control)</option>
+                        </select>
+                        <span class="param-help">"Faithful" animates your uploaded photo with the video's motion (identity preserved). "Stylized" invents a new subject from the prompt, steered by the pose.</span>
+                    </div>
+
+                    <div class="param-row">
+                        <div class="param-info">
                             <label for="param-sigma">Blender Smooth Sigma</label>
                             <span class="param-value" id="val-sigma">2.0</span>
                         </div>

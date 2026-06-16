@@ -21,7 +21,10 @@
       "Bash(python -c \"import json; w=json.load\\(open\\('workflow_qi_pipeline.json'\\)\\); n=w['45']['inputs']; req=['frames','ckpt_name','clear_cache_after_n_frames','multiplier','fast_mode','ensemble','scale_factor','dtype','torch_compile','batch_size']; missing=[k for k in req if k not in n]; print\\('node45 inputs:', sorted\\(n.keys\\(\\)\\)\\); print\\('MISSING required:', missing or 'NONE'\\)\")",
       "Bash(python _inspect/parse_wf.py _inspect/wananimate_preprocess_02.json)",
       "Bash(python -c \"import json; w=json.load\\(open\\('workflow_qi_pipeline.json'\\)\\); print\\('JSON OK,', len\\(w\\), 'nodes'\\); print\\('classes:', sorted\\(set\\(n['class_type'] for n in w.values\\(\\)\\)\\)\\)\")",
-      "Bash(python -c \"import json; json.load\\(open\\('workflow_qi_pipeline.json'\\)\\); print\\('JSON OK'\\)\")"
+      "Bash(python -c \"import json; json.load\\(open\\('workflow_qi_pipeline.json'\\)\\); print\\('JSON OK'\\)\")",
+      "Bash(python -c \"import json; [json.load\\(open\\('workflows/'+f\\)\\) for f in ['wan_animate.json','fun_control.json']]; print\\('OK'\\)\")",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ]
   }
 }

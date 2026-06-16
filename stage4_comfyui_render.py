@@ -403,6 +403,12 @@ def main():
         help="Number of transformer blocks to offload to CPU — frees VRAM at the "
              "cost of speed. 0 = disabled (default).",
     )
+    parser.add_argument(
+        "--mode", type=str, default=os.environ.get("PIPELINE_MODE", "animate"),
+        choices=["animate", "funcontrol"],
+        help="Render mode: 'animate' (Wan-Animate, full motion via context windows) "
+             "or 'funcontrol' (Wan2.1 Fun Control, <=81 frames at 832x480).",
+    )
     args = parser.parse_args()
 
     # Validate inputs
@@ -441,40 +447,47 @@ def main():
         render_output,
     )
 
-    # ── Reconcile video length with the driving frames ──────────────────────
-    # Wan-Animate renders the WHOLE driving performance via context windows, so
-    # there is no 81-frame single-pass ceiling — we use every extracted frame.
-    # VRAM is bounded by frame_window_size (set on WanVideoAnimateEmbeds), not by
-    # the total length. MAX_FRAMES is just a sanity guard against runaway clips.
-    MAX_FRAMES = int(os.environ.get("ANIMATE_MAX_FRAMES", 1000))
-    FRAME_WINDOW = int(os.environ.get("ANIMATE_FRAME_WINDOW", 77))
+    # ── Reconcile length + dimensions (mode-specific) ───────────────────────
     available = len(sorted(args.controlnet_maps.glob("*.png")))
     if available == 0:
         log.error(f"No driving frames in {args.controlnet_maps}")
         sys.exit(1)
 
-    requested = int(workflow.get("24", {}).get("inputs", {}).get("num_frames", available))
-    # Use all available frames (cap only if absurdly long); ignore the workflow's
-    # placeholder num_frames — the driving clip length is authoritative.
-    target = max(1, min(available, MAX_FRAMES))
-
-    # Load all driving frames; set the output length to the same count.
-    workflow["20"]["inputs"]["image_load_cap"] = 0          # VHS_LoadImages (0 = all)
-    workflow["24"]["inputs"]["num_frames"] = target          # WanVideoAnimateEmbeds
-    # Context window: render in overlapping windows so VRAM stays bounded.
-    workflow["24"]["inputs"]["frame_window_size"] = min(FRAME_WINDOW, target)
-
-    # ── Inject generation dimensions (match source aspect — no letterboxing) ──
-    gen_w = (int(args.gen_width) // 16) * 16
-    gen_h = (int(args.gen_height) // 16) * 16
-    for node in workflow.values():
-        ct = node.get("class_type")
-        ins = node.setdefault("inputs", {})
-        if ct in ("ImageScale", "PoseAndFaceDetection", "DrawViTPose", "WanVideoAnimateEmbeds"):
-            if "width" in ins or ct in ("PoseAndFaceDetection", "DrawViTPose", "WanVideoAnimateEmbeds", "ImageScale"):
-                ins["width"] = gen_w
-                ins["height"] = gen_h
-    log.info(f"Generation size set to {gen_w}x{gen_h}; frame_window_size={workflow['24']['inputs']['frame_window_size']}.")
+    if args.mode == "animate":
+        # Wan-Animate renders the WHOLE performance via context windows — no
+        # 81-frame ceiling. VRAM is bounded by frame_window_size, not total length.
+        MAX_FRAMES = int(os.environ.get("ANIMATE_MAX_FRAMES", 1000))
+        FRAME_WINDOW = int(os.environ.get("ANIMATE_FRAME_WINDOW", 77))
+        target = max(1, min(available, MAX_FRAMES))
+        gen_w = (int(args.gen_width) // 16) * 16
+        gen_h = (int(args.gen_height) // 16) * 16
+        workflow["20"]["inputs"]["image_load_cap"] = 0           # VHS_LoadImages (all)
+        workflow["24"]["inputs"]["num_frames"] = target          # WanVideoAnimateEmbeds
+        workflow["24"]["inputs"]["frame_window_size"] = min(FRAME_WINDOW, target)
+        # Match generation dims to the source aspect (no letterboxing).
+        for node in workflow.values():
+            if node.get("class_type") in (
+                "ImageScale", "PoseAndFaceDetection", "DrawViTPose", "WanVideoAnimateEmbeds"
+            ):
+                node.setdefault("inputs", {}).update({"width": gen_w, "height": gen_h})
+        log.info(
+            f"[animate] {target} frames at {gen_w}x{gen_h}, "
+            f"window={workflow['24']['inputs']['frame_window_size']}."
+        )
+    else:
+        # Fun Control: single-pass. The control latents (node 20->22) and the
+        # image-cond latents (node 24) must encode the SAME frame count (<=81),
+        # or the sampler crashes ("Sizes of tensors must match").
+        MAX_FRAMES = 81
+        gen_w, gen_h = 832, 480
+        requested = int(workflow.get("24", {}).get("inputs", {}).get("num_frames", available))
+        target = max(1, min(requested, available, MAX_FRAMES))
+        workflow["20"]["inputs"]["image_load_cap"] = target      # VHS_LoadImages
+        workflow["24"]["inputs"]["num_frames"] = target          # WanVideoImageToVideoEncode
+        log.info(
+            f"[funcontrol] {target} frames at {gen_w}x{gen_h} "
+            f"({available} available, capped to {MAX_FRAMES})."
+        )
 
     # ── Frame interpolation (RIFE): smooth low-fps keyframes up to target_fps ───
     # The diffusion pass renders `target` keyframes spanning the whole clip at a
@@ -558,8 +571,8 @@ def main():
             log.warning("Block swap requested but no WanVideoModelLoader found.")
 
     log.info(
-        f"Rendering {target} driving frames at {gen_w}x{gen_h} "
-        f"(window={workflow['24']['inputs']['frame_window_size']}) → {playback_fps} fps playback."
+        f"Rendering [{args.mode}] {target} frames at {gen_w}x{gen_h} "
+        f"→ {playback_fps} fps playback."
     )
 
     # Start ComfyUI server

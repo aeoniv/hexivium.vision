@@ -17,6 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const paramCfg = document.getElementById("param-cfg");
     const valCfg = document.getElementById("val-cfg");
 
+    const paramMode = document.getElementById("param-mode");
+    const valMode = document.getElementById("val-mode");
     const paramLength = document.getElementById("param-length");
     const valLength = document.getElementById("val-length");
     const paramFps = document.getElementById("param-fps");
@@ -63,6 +65,20 @@ document.addEventListener("DOMContentLoaded", () => {
         valLength.textContent = e.target.value === "81" ? "Full clip" : `≤${e.target.value} frames`;
     });
     paramFps.addEventListener("change", (e) => valFps.textContent = `${e.target.value} fps`);
+
+    // Switching mode resets steps/CFG to that engine's correct range — the two
+    // pipelines want opposite settings (animate: ~4 steps/CFG 1; funcontrol: ~30/5.5).
+    paramMode.addEventListener("change", (e) => {
+        if (e.target.value === "funcontrol") {
+            valMode.textContent = "Stylized";
+            paramSteps.min = 15; paramSteps.max = 50; paramSteps.value = 30; valSteps.textContent = 30;
+            paramCfg.min = 2.0; paramCfg.max = 10.0; paramCfg.value = 5.5; valCfg.textContent = "5.5";
+        } else {
+            valMode.textContent = "Faithful";
+            paramSteps.min = 2; paramSteps.max = 12; paramSteps.value = 4; valSteps.textContent = 4;
+            paramCfg.min = 1.0; paramCfg.max = 2.0; paramCfg.value = 1.0; valCfg.textContent = "1.0";
+        }
+    });
 
     // Upload Box Click Handler
     videoUploadBox.addEventListener("click", () => videoInput.click());
@@ -186,6 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
         paramSigma.setAttribute("disabled", "true");
         paramSteps.setAttribute("disabled", "true");
         paramCfg.setAttribute("disabled", "true");
+        paramMode.setAttribute("disabled", "true");
         paramLength.setAttribute("disabled", "true");
         paramFps.setAttribute("disabled", "true");
         paramPrompt.setAttribute("disabled", "true");
@@ -205,6 +222,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("cfg", paramCfg.value);
         formData.append("num_frames", paramLength.value);
         formData.append("target_fps", paramFps.value);
+        formData.append("mode", paramMode.value);
         formData.append("prompt", paramPrompt.value.trim());
         formData.append("negative_prompt", paramNegative.value.trim());
 
@@ -323,6 +341,7 @@ document.addEventListener("DOMContentLoaded", () => {
         paramSigma.removeAttribute("disabled");
         paramSteps.removeAttribute("disabled");
         paramCfg.removeAttribute("disabled");
+        paramMode.removeAttribute("disabled");
         paramLength.removeAttribute("disabled");
         paramFps.removeAttribute("disabled");
         paramPrompt.removeAttribute("disabled");

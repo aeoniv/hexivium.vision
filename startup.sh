@@ -289,7 +289,8 @@ gsutil -q cp "${GCS_BUCKET}/scripts/stage1_wham_extract.py"         "${PIPELINE_
 gsutil -q cp "${GCS_BUCKET}/scripts/stage2_blender_smooth.py"       "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/stage3_controlnet_preprocess.py" "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/stage4_comfyui_render.py"       "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
-gsutil -q cp "${GCS_BUCKET}/scripts/workflow_qi_pipeline.json"      "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
+mkdir -p "${PIPELINE_ROOT}/scripts/workflows"
+gsutil -q -m cp "${GCS_BUCKET}/scripts/workflows/*"                 "${PIPELINE_ROOT}/scripts/workflows/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/run_pipeline.sh"                "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/cleanup_on_failure.sh"          "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
 gsutil -q cp "${GCS_BUCKET}/scripts/qi_idle_watchdog.sh"            "${PIPELINE_ROOT}/scripts/" 2>/dev/null || true
