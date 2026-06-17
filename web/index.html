@@ -18,7 +18,7 @@
                 <div class="vortex-icon"></div>
                 <div class="brand">
                     <h1>QI KINEMATIC DIRECTOR</h1>
-                    <p class="subtitle">Bio-Digital Mocap-to-Video Orchestration Studio</p>
+                    <p class="subtitle">Wan2.2-Animate · Photo-to-Video Studio</p>
                 </div>
             </div>
             <div class="connection-status">
@@ -103,44 +103,7 @@
                     </div>
 
                     <div class="param-row">
-                        <div class="param-info">
-                            <label for="param-sigma">Blender Smooth Sigma</label>
-                            <span class="param-value" id="val-sigma">2.0</span>
-                        </div>
-                        <input type="range" id="param-sigma" min="0.5" max="5.0" step="0.1" value="2.0">
-                        <span class="param-help">Controls joint-stabilization smoothing strength.</span>
-                    </div>
-
-                    <div class="param-row">
-                        <div class="param-info">
-                            <label for="param-steps">Diffusion Steps</label>
-                            <span class="param-value" id="val-steps">4</span>
-                        </div>
-                        <input type="range" id="param-steps" min="2" max="12" step="1" value="4">
-                        <span class="param-help">Wan-Animate uses a 4-step distill LoRA — keep this low (≈4). Higher just wastes time.</span>
-                    </div>
-
-                    <div class="param-row">
-                        <div class="param-info">
-                            <label for="param-cfg">CFG Guidance Scale</label>
-                            <span class="param-value" id="val-cfg">1.0</span>
-                        </div>
-                        <input type="range" id="param-cfg" min="1.0" max="2.0" step="0.5" value="1.0">
-                        <span class="param-help">The distill LoRA needs CFG ≈ 1; higher values break it and double render time.</span>
-                    </div>
-
-                    <div class="param-row">
-                        <div class="param-info">
-                            <label for="param-length">Video Length</label>
-                            <span class="param-value" id="val-length">Full clip</span>
-                        </div>
-                        <select id="param-length">
-                            <option value="33">Short — up to 33 frames</option>
-                            <option value="49">Medium — up to 49 frames</option>
-                            <option value="65">Long — up to 65 frames</option>
-                            <option value="81" selected>Full clip — up to 81 frames</option>
-                        </select>
-                        <span class="param-help">How much of your clip to render. "Full clip" uses the whole video (auto-capped to ~81 frames for the GPU). Lower values trim it shorter.</span>
+                        <span class="param-help">Quality is fixed to the canonical config — <strong>720p · Wan2.2-Animate fp8 · 6-step distill · ViTPose-H</strong> — and the <strong>whole clip</strong> is rendered automatically (portrait videos are handled correctly). No tuning needed.</span>
                     </div>
 
                     <div class="param-row">
@@ -199,34 +162,34 @@
                     </div>
 
                     <div class="pipeline-nodes">
-                        <!-- Node 1: WHAM -->
+                        <!-- Node 1: Frame extraction -->
                         <div class="node-card" id="node-wham">
                             <div class="node-icon wham-node-icon"></div>
-                            <span class="node-title">Stage 1: WHAM</span>
+                            <span class="node-title">Extract Frames</span>
                             <span class="node-status">Waiting</span>
                         </div>
                         <div class="connector" id="conn-1"></div>
 
-                        <!-- Node 2: Blender -->
+                        <!-- Node 2: Model load + pose/face detection -->
                         <div class="node-card" id="node-blender">
                             <div class="node-icon blender-node-icon"></div>
-                            <span class="node-title">Stage 2: Blender</span>
+                            <span class="node-title">Load & Detect Pose</span>
                             <span class="node-status">Waiting</span>
                         </div>
                         <div class="connector" id="conn-2"></div>
 
-                        <!-- Node 3: ControlNet -->
+                        <!-- Node 3: Wan-Animate diffusion -->
                         <div class="node-card" id="node-controlnet">
                             <div class="node-icon control-node-icon"></div>
-                            <span class="node-title">Stage 3: Preprocess</span>
+                            <span class="node-title">Animate Render</span>
                             <span class="node-status">Waiting</span>
                         </div>
                         <div class="connector" id="conn-3"></div>
 
-                        <!-- Node 4: ComfyUI -->
+                        <!-- Node 4: RIFE interpolation + output -->
                         <div class="node-card" id="node-comfyui">
                             <div class="node-icon comfy-node-icon"></div>
-                            <span class="node-title">Stage 4: ComfyUI</span>
+                            <span class="node-title">Interpolate + Output</span>
                             <span class="node-status">Waiting</span>
                         </div>
                     </div>

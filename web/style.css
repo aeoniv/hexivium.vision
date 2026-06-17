@@ -384,7 +384,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     box-shadow: 0 0 8px var(--qi-cyan-glow);
 }
 
-select#param-length {
+.params-section select {
     width: 100%;
     padding: 0.6rem 0.8rem;
     border-radius: 8px;
@@ -397,18 +397,18 @@ select#param-length {
     cursor: pointer;
 }
 
-select#param-length:focus {
+.params-section select:focus {
     border-color: var(--qi-cyan);
     box-shadow: 0 0 8px var(--qi-cyan-glow);
 }
 
-select#param-length option {
+.params-section select option {
     background: #15151c;
     color: var(--text-main, #e8e8ea);
 }
 
 .prompt-input:disabled,
-select#param-length:disabled {
+.params-section select:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }

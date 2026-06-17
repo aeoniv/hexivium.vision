@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import json
 import subprocess
 import threading
@@ -42,8 +43,11 @@ def generate_avatar_worker(prompt: str, negative: str):
     avatar_status = {"running": True, "ready": False, "error": "", "log": ""}
     env = os.environ.copy()
     env["PIPELINE_ROOT"] = str(PIPELINE_ROOT)
+
+    # Use the SAME interpreter that runs this server (the qi-pipeline conda env,
+    # via the systemd ExecStart path) so the subprocess inherits torch/CUDA/etc.
     cmd = [
-        "python", str(PIPELINE_ROOT / "scripts" / "generate_image.py"),
+        sys.executable, str(PIPELINE_ROOT / "scripts" / "generate_image.py"),
         "--workflow", str(PIPELINE_ROOT / "scripts" / "workflows" / "txt2img_sdxl.json"),
         "--output", str(INPUT_DIR / "reference_image.png"),
     ]
@@ -51,6 +55,7 @@ def generate_avatar_worker(prompt: str, negative: str):
         cmd += ["--prompt", prompt]
     if negative:
         cmd += ["--negative", negative]
+
     try:
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=900)
         avatar_status["log"] = (result.stdout or "")[-2000:] + (result.stderr or "")[-2000:]
@@ -91,10 +96,17 @@ def run_pipeline_worker(
             with open(canonical_workflow, 'r') as f:
                 wf = json.load(f)
 
-            # Update CFG and Steps in WanVideoSampler (Node 30)
+            # Sampler (Node 30). Wan-Animate runs on the lightx2v 6-step distill LoRA,
+            # which REQUIRES ~6 steps / cfg 1 — any other values degrade it badly. Force
+            # the canonical distill config for animate regardless of UI input; funcontrol
+            # (no distill) keeps the UI's steps/cfg.
             if "30" in wf and "inputs" in wf["30"]:
-                wf["30"]["inputs"]["steps"] = steps
-                wf["30"]["inputs"]["cfg"] = cfg
+                if mode == "animate":
+                    wf["30"]["inputs"]["steps"] = 6
+                    wf["30"]["inputs"]["cfg"] = 1.0
+                else:
+                    wf["30"]["inputs"]["steps"] = steps
+                    wf["30"]["inputs"]["cfg"] = cfg
 
             # Update prompt in WanVideoTextEncode (Node 10)
             if "10" in wf and "inputs" in wf["10"]:
@@ -230,7 +242,7 @@ def get_status():
     
     if LOG_FILE.exists():
         try:
-            with open(LOG_FILE, "r") as f:
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
                 log_content = "".join(lines[-100:])  # Last 100 lines
                 

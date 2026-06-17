@@ -33,7 +33,7 @@ log = logging.getLogger("stage4")
 
 PIPELINE_ROOT = Path(os.environ.get("PIPELINE_ROOT", "/opt/qi-pipeline"))
 OUTPUT_DIR = PIPELINE_ROOT / "output"
-COMFYUI_DIR = PIPELINE_ROOT / "engines" / "ComfyUI"
+COMFYUI_DIR = Path(os.environ.get("COMFYUI_DIR", str(PIPELINE_ROOT / "engines" / "ComfyUI")))
 COMFYUI_HOST = "127.0.0.1"
 COMFYUI_PORT = 8188
 
@@ -453,6 +453,10 @@ def main():
         log.error(f"No driving frames in {args.controlnet_maps}")
         sys.exit(1)
 
+    # Source node whose decoded pixels feed RIFE/output. Default = first-pass
+    # decode (node 40). The enhancer (animate only) repoints this to node 44.
+    decode_source = "40"
+
     if args.mode == "animate":
         # Wan-Animate renders the WHOLE performance via context windows — no
         # 81-frame ceiling. VRAM is bounded by frame_window_size, not total length.
@@ -461,7 +465,10 @@ def main():
         target = max(1, min(available, MAX_FRAMES))
         gen_w = (int(args.gen_width) // 16) * 16
         gen_h = (int(args.gen_height) // 16) * 16
-        workflow["20"]["inputs"]["image_load_cap"] = 0           # VHS_LoadImages (all)
+        # Load EXACTLY `target` driving frames. Using 0 (=all) here while num_frames
+        # is capped below `available` makes the pose tensor (all frames) mismatch the
+        # embeds tensor (target frames) → "size of tensor a/b" crash. Keep them equal.
+        workflow["20"]["inputs"]["image_load_cap"] = target      # VHS_LoadImages
         workflow["24"]["inputs"]["num_frames"] = target          # WanVideoAnimateEmbeds
         workflow["24"]["inputs"]["frame_window_size"] = min(FRAME_WINDOW, target)
         # Match generation dims to the source aspect (no letterboxing).
@@ -474,6 +481,37 @@ def main():
             f"[animate] {target} frames at {gen_w}x{gen_h}, "
             f"window={workflow['24']['inputs']['frame_window_size']}."
         )
+
+        # ── WanVideoContextOptions (optional, canonical long-gen) ───────────
+        # Default OFF = the proven embeds-level windowing (frame_window_size <
+        # num_frames; faster, better motion). ON = sampler-level sliding context
+        # which doesn't degrade over long clips. Per Kijai's note you use one or
+        # the other: with context options, set frame_window_size == num_frames.
+        if os.environ.get("ENABLE_CONTEXT", "0") == "1" and "31" in workflow:
+            workflow["30"]["inputs"]["context_options"] = ["31", 0]
+            workflow["24"]["inputs"]["frame_window_size"] = target
+            log.info("[animate] context options ON — non-degrading long-gen, window==num_frames.")
+
+        # ── Two-pass enhancer (optional) ────────────────────────────────────
+        # The Animate sampler ignores init-latents (wananimate_loop bypasses the
+        # `samples` path), so detail recovery must be a SEPARATE plain Wan refine
+        # pass: decode(40) -> WanVideoEncode(41) -> EmptyEmbeds(42) ->
+        # WanVideoSampler(43, low denoise) -> decode(44). Off by default; the
+        # enhancer nodes sit orphaned (never executed) until we point RIFE at 44.
+        if os.environ.get("ENABLE_ENHANCER", "0") == "1" and "44" in workflow:
+            workflow["42"]["inputs"].update(
+                {"width": gen_w, "height": gen_h, "num_frames": target}
+            )
+            denoise = float(os.environ.get("ENHANCER_DENOISE", 0.3))
+            esteps = int(os.environ.get("ENHANCER_STEPS", 6))
+            workflow["43"]["inputs"].update(
+                {"denoise_strength": denoise, "steps": esteps}
+            )
+            decode_source = "44"
+            log.info(
+                f"[animate] enhancer ON — refine denoise={denoise}, steps={esteps}, "
+                f"output from node 44."
+            )
     else:
         # Fun Control: single-pass. The control latents (node 20->22) and the
         # image-cond latents (node 24) must encode the SAME frame count (<=81),
@@ -511,7 +549,7 @@ def main():
         playback_fps = base_fps
         for node in workflow.values():
             if node.get("class_type") == "VHS_VideoCombine":
-                node.setdefault("inputs", {})["images"] = ["40", 0]
+                node.setdefault("inputs", {})["images"] = [decode_source, 0]
                 node["inputs"]["frame_rate"] = base_fps
         log.info(
             f"Keyframe rate {base_fps} fps already ≥ target {target_fps} — "
@@ -523,6 +561,7 @@ def main():
         for node in workflow.values():
             if node.get("class_type") == "RIFE VFI":
                 node.setdefault("inputs", {})["multiplier"] = multiplier
+                node["inputs"]["frames"] = [decode_source, 0]
                 rife_found = True
             if node.get("class_type") == "VHS_VideoCombine":
                 node.setdefault("inputs", {})["frame_rate"] = playback_fps
@@ -536,7 +575,7 @@ def main():
             playback_fps = base_fps
             for node in workflow.values():
                 if node.get("class_type") == "VHS_VideoCombine":
-                    node.setdefault("inputs", {})["images"] = ["40", 0]
+                    node.setdefault("inputs", {})["images"] = [decode_source, 0]
                     node["inputs"]["frame_rate"] = base_fps
             log.warning("No 'RIFE VFI' node in workflow — output stays at base fps.")
 

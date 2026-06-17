@@ -1,0 +1,27 @@
+# Qi Orchestrator UI — RunPod (/workspace/qi, system python).
+# NOTE: most RunPod containers have no systemd/init; prefer runpod_launch.sh.
+# This unit is for pods/VMs that DO run systemd. On GCP the old paths were
+# /opt/qi-pipeline + /opt/miniconda3 (see git history) — RunPod uses /workspace.
+[Unit]
+Description=Qi Orchestrator UI (FastAPI / uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/qi/scripts
+Environment=PIPELINE_ROOT=/workspace/qi
+Environment=COMFYUI_DIR=/workspace/qi/ComfyUI
+Environment=PIPELINE_MODE=animate
+Environment=USE_CONDA=0
+Environment=USE_GCS=0
+Environment=SKIP_SHUTDOWN=1
+ExecStart=/usr/bin/env python /workspace/qi/scripts/app_server.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/workspace/qi/qi_ui.log
+StandardError=append:/workspace/qi/qi_ui.log
+
+[Install]
+WantedBy=multi-user.target

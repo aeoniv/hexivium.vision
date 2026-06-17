@@ -10,17 +10,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const imageFileName = document.getElementById("image-file-name");
     const imageUploadProgress = document.getElementById("image-upload-progress");
 
-    const paramSigma = document.getElementById("param-sigma");
-    const valSigma = document.getElementById("val-sigma");
-    const paramSteps = document.getElementById("param-steps");
-    const valSteps = document.getElementById("val-steps");
-    const paramCfg = document.getElementById("param-cfg");
-    const valCfg = document.getElementById("val-cfg");
-
     const paramMode = document.getElementById("param-mode");
     const valMode = document.getElementById("val-mode");
-    const paramLength = document.getElementById("param-length");
-    const valLength = document.getElementById("val-length");
     const paramFps = document.getElementById("param-fps");
     const valFps = document.getElementById("val-fps");
     const paramPrompt = document.getElementById("param-prompt");
@@ -62,27 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
     let pollInterval = null;
     let lastLogLength = 0;
 
-    // Sliders dynamic value display
-    paramSigma.addEventListener("input", (e) => valSigma.textContent = parseFloat(e.target.value).toFixed(1));
-    paramSteps.addEventListener("input", (e) => valSteps.textContent = e.target.value);
-    paramCfg.addEventListener("input", (e) => valCfg.textContent = parseFloat(e.target.value).toFixed(1));
-    paramLength.addEventListener("change", (e) => {
-        valLength.textContent = e.target.value === "81" ? "Full clip" : `≤${e.target.value} frames`;
-    });
+    // Dynamic value display
     paramFps.addEventListener("change", (e) => valFps.textContent = `${e.target.value} fps`);
-
-    // Switching mode resets steps/CFG to that engine's correct range — the two
-    // pipelines want opposite settings (animate: ~4 steps/CFG 1; funcontrol: ~30/5.5).
     paramMode.addEventListener("change", (e) => {
-        if (e.target.value === "funcontrol") {
-            valMode.textContent = "Stylized";
-            paramSteps.min = 15; paramSteps.max = 50; paramSteps.value = 30; valSteps.textContent = 30;
-            paramCfg.min = 2.0; paramCfg.max = 10.0; paramCfg.value = 5.5; valCfg.textContent = "5.5";
-        } else {
-            valMode.textContent = "Faithful";
-            paramSteps.min = 2; paramSteps.max = 12; paramSteps.value = 4; valSteps.textContent = 4;
-            paramCfg.min = 1.0; paramCfg.max = 2.0; paramCfg.value = 1.0; valCfg.textContent = "1.0";
-        }
+        valMode.textContent = e.target.value === "funcontrol" ? "Stylized" : "Faithful";
     });
 
     // Upload Box Click Handler
@@ -203,12 +177,8 @@ document.addEventListener("DOMContentLoaded", () => {
         launchBtn.classList.add("running");
         launchBtn.querySelector(".btn-text").textContent = "TRANSMUTING VITAL FORCE...";
         
-        // Disable sliders
-        paramSigma.setAttribute("disabled", "true");
-        paramSteps.setAttribute("disabled", "true");
-        paramCfg.setAttribute("disabled", "true");
+        // Disable controls
         paramMode.setAttribute("disabled", "true");
-        paramLength.setAttribute("disabled", "true");
         paramFps.setAttribute("disabled", "true");
         paramPrompt.setAttribute("disabled", "true");
         paramNegative.setAttribute("disabled", "true");
@@ -222,10 +192,12 @@ document.addEventListener("DOMContentLoaded", () => {
         resetNodesUI();
         
         const formData = new FormData();
-        formData.append("sigma", paramSigma.value);
-        formData.append("steps", paramSteps.value);
-        formData.append("cfg", paramCfg.value);
-        formData.append("num_frames", paramLength.value);
+        // Animate quality is fixed server-side (6-step distill, cfg 1, 720p, whole clip);
+        // these are sent only to satisfy the API and are ignored/forced for animate mode.
+        formData.append("sigma", "2.0");
+        formData.append("steps", "6");
+        formData.append("cfg", "1.0");
+        formData.append("num_frames", "81");
         formData.append("target_fps", paramFps.value);
         formData.append("mode", paramMode.value);
         formData.append("prompt", paramPrompt.value.trim());
@@ -349,8 +321,8 @@ document.addEventListener("DOMContentLoaded", () => {
             progressPct.textContent = `${data.progress}%`;
             progressLabel.textContent = data.stage;
 
-            // Highlight Nodes based on stage
-            updateNodesUI(data.stage, data.sampler_step);
+            // Highlight Nodes based on progress
+            updateNodesUI(data.progress, data.sampler_step, data.stage);
 
             // Check if finished
             if (!data.running && isPipelineRunning) {
@@ -385,12 +357,8 @@ document.addEventListener("DOMContentLoaded", () => {
         launchBtn.classList.remove("running");
         launchBtn.querySelector(".btn-text").textContent = "LAUNCH QI TRANSMUTATION";
         
-        // Re-enable sliders
-        paramSigma.removeAttribute("disabled");
-        paramSteps.removeAttribute("disabled");
-        paramCfg.removeAttribute("disabled");
+        // Re-enable controls
         paramMode.removeAttribute("disabled");
-        paramLength.removeAttribute("disabled");
         paramFps.removeAttribute("disabled");
         paramPrompt.removeAttribute("disabled");
         paramNegative.removeAttribute("disabled");
@@ -406,68 +374,34 @@ document.addEventListener("DOMContentLoaded", () => {
         [conn1, conn2, conn3].forEach(c => c.className = "connector");
     }
 
-    function updateNodesUI(stage, samplerStep) {
+    // Drive the 4-node animate flow off the overall progress %, which maps to the
+    // real stages: extract→45, model-load+pose 45-65, sampler 65-98, RIFE/output 98-100.
+    function updateNodesUI(progress, samplerStep, stage) {
         resetNodesUI();
-
-        if (stage.includes("WHAM")) {
-            nodeWham.className = "node-card active";
-            nodeWham.querySelector(".node-status").textContent = "Extracting SMPL...";
-        } 
-        else if (stage.includes("Blender")) {
-            nodeWham.className = "node-card completed";
-            nodeWham.querySelector(".node-status").textContent = "Done";
-            conn1.className = "connector active";
-            
-            nodeBlender.className = "node-card active";
-            nodeBlender.querySelector(".node-status").textContent = "Smoothing & Floor Lock...";
-        } 
-        else if (stage.includes("ControlNet")) {
-            nodeWham.className = "node-card completed";
-            nodeWham.querySelector(".node-status").textContent = "Done";
-            conn1.className = "connector active";
-            
-            nodeBlender.className = "node-card completed";
-            nodeBlender.querySelector(".node-status").textContent = "Done";
-            conn2.className = "connector active";
-            
-            nodeControlnet.className = "node-card active";
-            nodeControlnet.querySelector(".node-status").textContent = "Mapping DensePose...";
-        } 
-        else if (stage.includes("Neural Render") || stage.includes("ComfyUI")) {
-            nodeWham.className = "node-card completed";
-            nodeWham.querySelector(".node-status").textContent = "Done";
-            conn1.className = "connector active";
-            
-            nodeBlender.className = "node-card completed";
-            nodeBlender.querySelector(".node-status").textContent = "Done";
-            conn2.className = "connector active";
-            
-            nodeControlnet.className = "node-card completed";
-            nodeControlnet.querySelector(".node-status").textContent = "Done";
-            conn3.className = "connector active";
-            
-            nodeComfyui.className = "node-card active";
-            nodeComfyui.querySelector(".node-status").textContent = samplerStep ? `Sampling ${samplerStep}` : "Inference Initiating...";
-        } 
-        else if (stage === "Complete") {
-            nodeWham.className = "node-card completed";
-            nodeWham.querySelector(".node-status").textContent = "Done";
-            conn1.className = "connector active";
-            
-            nodeBlender.className = "node-card completed";
-            nodeBlender.querySelector(".node-status").textContent = "Done";
-            conn2.className = "connector active";
-            
-            nodeControlnet.className = "node-card completed";
-            nodeControlnet.querySelector(".node-status").textContent = "Done";
-            conn3.className = "connector active";
-            
-            nodeComfyui.className = "node-card completed";
-            nodeComfyui.querySelector(".node-status").textContent = "Finished";
-        }
-        else if (stage === "Error") {
-            // Highlight failed state if running terminated
+        if (stage === "Error") {
             appendLog("[ERROR] An error occurred in the active pipeline block.", "error-log");
+            return;
         }
+        const p = Number(progress) || 0;
+        const done = (node, conn) => {
+            node.className = "node-card completed";
+            node.querySelector(".node-status").textContent = "Done";
+            if (conn) conn.className = "connector active";
+        };
+        const active = (node, status) => {
+            node.className = "node-card active";
+            node.querySelector(".node-status").textContent = status;
+        };
+        const complete = p >= 100 || stage === "Complete";
+
+        // 1 — Extract Frames
+        if (p >= 45) done(nodeWham, conn1); else if (p > 0) active(nodeWham, "Extracting driving frames…");
+        // 2 — Load model & detect pose/face
+        if (p >= 65) done(nodeBlender, conn2); else if (p >= 45) active(nodeBlender, "Loading model & detecting pose…");
+        // 3 — Wan-Animate render (sampler)
+        if (p >= 98) done(nodeControlnet, conn3); else if (p >= 65) active(nodeControlnet, samplerStep ? `Sampling ${samplerStep}` : "Rendering…");
+        // 4 — RIFE interpolation + output
+        if (complete) { nodeComfyui.className = "node-card completed"; nodeComfyui.querySelector(".node-status").textContent = "Finished"; }
+        else if (p >= 98) active(nodeComfyui, "Interpolating & encoding…");
     }
 });

@@ -37,7 +37,7 @@ LOG_FILE="${PIPELINE_ROOT}/pipeline_run.log"
 
 CONDA_ROOT="/opt/miniconda3"
 BLENDER_BIN="${PIPELINE_ROOT}/engines/blender/blender"
-COMFYUI_DIR="${PIPELINE_ROOT}/engines/ComfyUI"
+export COMFYUI_DIR="${COMFYUI_DIR:-${PIPELINE_ROOT}/engines/ComfyUI}"
 
 # ── Pipeline mode ───────────────────────────────────────────────────────────
 # Two render engines share this orchestrator. Select with PIPELINE_MODE:
@@ -95,9 +95,13 @@ echo "================================================================"
 echo "[PIPELINE] Qi Pipeline Director — Started $(date -Iseconds)"
 echo "================================================================"
 
-# Activate conda environment
-source "${CONDA_ROOT}/etc/profile.d/conda.sh"
-conda activate qi-pipeline
+# Activate conda environment (GCP). On RunPod (no conda) use system python.
+if [ "${USE_CONDA:-1}" = "1" ] && [ -f "${CONDA_ROOT}/etc/profile.d/conda.sh" ]; then
+    source "${CONDA_ROOT}/etc/profile.d/conda.sh"
+    conda activate qi-pipeline
+else
+    echo "[PIPELINE] Conda skipped — using system python ($(command -v python))."
+fi
 
 # Verify GPU
 echo "[PIPELINE] GPU Status:"
@@ -109,18 +113,16 @@ if [ ! -f "${PIPELINE_ROOT}/.bootstrap_complete" ]; then
     exit 1
 fi
 
-# ── Download inputs from GCS ───────────────────────────────────────────────
-echo "[PIPELINE] Downloading inputs from GCS..."
+# ── Inputs ──────────────────────────────────────────────────────────────────
 mkdir -p "${INPUT_DIR}"
-# Only pull from GCS if inputs aren't already present locally. The web UI uploads
-# directly into ${INPUT_DIR}; pulling unconditionally would clobber those with
-# whatever stale files happen to sit in the bucket.
-if [ ! -f "${INPUT_DIR}/source_video.mp4" ]; then
+# The web UI (app_server) uploads directly into ${INPUT_DIR}. On GCP we also pull
+# from GCS if no local source exists; on RunPod (USE_GCS=0) inputs are local-only.
+if [ "${USE_GCS:-1}" = "1" ] && [ ! -f "${INPUT_DIR}/source_video.mp4" ]; then
     echo "[PIPELINE] No local source video — fetching inputs from GCS..."
     gsutil -q cp "${GCS_BUCKET}/input/*" "${INPUT_DIR}/" 2>/dev/null || \
         echo "[PIPELINE] WARNING: No input files in GCS bucket"
 else
-    echo "[PIPELINE] Using locally-provided inputs (skipping GCS pull)."
+    echo "[PIPELINE] Using locally-provided inputs in ${INPUT_DIR}."
 fi
 
 # Verify required inputs
@@ -145,13 +147,17 @@ echo "│  STAGE 1: WHAM — Markerless 3D SMPL Extraction              │"
 echo "└──────────────────────────────────────────────────────────────┘"
 STAGE1_START=$(date +%s)
 
-# NOTE: WHAM output is no longer used for the control path (Stage 2 now samples
-# pose directly from the source video). It is kept for optional 3D metadata only,
-# so a WHAM failure must NOT abort the run.
-python "${SCRIPTS_DIR}/stage1_wham_extract.py" \
-    --input "${INPUT_DIR}/source_video.mp4" \
-    --output "${OUTPUT_DIR}/raw.fbx" \
-    || echo "[PIPELINE] Stage 1 (WHAM) failed — continuing (not required for control)."
+# WHAM output is NOT used by either pipeline anymore (Stage 2 samples pose/face
+# directly; Animate detects in-graph). It is dead weight — skipped unless
+# RUN_WHAM=1 is set explicitly (e.g. to regenerate optional 3D metadata).
+if [ "${RUN_WHAM:-0}" = "1" ]; then
+    python "${SCRIPTS_DIR}/stage1_wham_extract.py" \
+        --input "${INPUT_DIR}/source_video.mp4" \
+        --output "${OUTPUT_DIR}/raw.fbx" \
+        || echo "[PIPELINE] Stage 1 (WHAM) failed — continuing (not required)."
+else
+    echo "[PIPELINE] Stage 1 (WHAM) skipped — output unused by control path (set RUN_WHAM=1 to force)."
+fi
 
 STAGE1_END=$(date +%s)
 echo "[PIPELINE] Stage 1 complete in $((STAGE1_END - STAGE1_START))s"
@@ -172,6 +178,19 @@ STAGE2_START=$(date +%s)
 SRC_VIDEO="${INPUT_DIR}/source_video.mp4"
 rm -rf "${OUTPUT_DIR}/renders"
 mkdir -p "${OUTPUT_DIR}/renders"
+
+# Normalize the source: bake in any rotation metadata. Phone-portrait videos store
+# LANDSCAPE dims + a rotation flag; ffmpeg auto-rotates frames on decode but ffprobe
+# reports the STORAGE dims, so gen dims get computed landscape and the portrait
+# content is squashed into a low-res landscape frame (mangled limbs). Re-encoding
+# produces an upright file whose storage dims == display dims, so sizing is correct.
+NORM_VIDEO="${OUTPUT_DIR}/source_normalized.mp4"
+if ffmpeg -y -loglevel error -i "${SRC_VIDEO}" -c:v libx264 -pix_fmt yuv420p -an "${NORM_VIDEO}" 2>/dev/null && [ -s "${NORM_VIDEO}" ]; then
+    SRC_VIDEO="${NORM_VIDEO}"
+    echo "[Stage2] Normalized source (rotation baked) -> ${NORM_VIDEO}"
+else
+    echo "[Stage2] WARNING: normalization failed; using original source."
+fi
 
 DURATION=$(ffprobe -v error -select_streams v:0 -show_entries format=duration \
     -of default=noprint_wrappers=1:nokey=1 "${SRC_VIDEO}")
@@ -194,7 +213,7 @@ print(max(1, int(min(nf, 81.0/d))))
 else
     # Wan-Animate: preserve source aspect (target ~GEN_SIZE long edge, /16) and
     # keep the real motion (extract at TARGET_EXTRACT_FPS, whole performance).
-    GEN_SIZE="${GEN_SIZE:-640}"
+    GEN_SIZE="${GEN_SIZE:-1280}"
     read GEN_W GEN_H < <(python -c "
 w,h=${SRC_W},${SRC_H}
 s=${GEN_SIZE}/max(w,h)
@@ -288,21 +307,20 @@ echo "[PIPELINE] Stage 4 complete in $((STAGE4_END - STAGE4_START))s"
 # ============================================================================
 # UPLOAD RESULTS
 # ============================================================================
-echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│  UPLOADING RESULTS TO GCS                                   │"
-echo "└──────────────────────────────────────────────────────────────┘"
-
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
-# Upload final video
-gsutil cp "${OUTPUT_DIR}/final.mp4" "${GCS_BUCKET}/output/final_${TIMESTAMP}.mp4"
-
-# Upload metadata
-gsutil -q cp "${OUTPUT_DIR}/stage"*"_metadata.json" "${GCS_BUCKET}/output/metadata/" 2>/dev/null || true
-
-# Upload pipeline log
-gsutil cp "${LOG_FILE}" "${GCS_BUCKET}/logs/pipeline_run_${TIMESTAMP}.log"
+FINAL_LOCATION="${OUTPUT_DIR}/final.mp4"
+if [ "${USE_GCS:-1}" = "1" ]; then
+    echo ""
+    echo "┌──────────────────────────────────────────────────────────────┐"
+    echo "│  UPLOADING RESULTS TO GCS                                   │"
+    echo "└──────────────────────────────────────────────────────────────┘"
+    gsutil cp "${OUTPUT_DIR}/final.mp4" "${GCS_BUCKET}/output/final_${TIMESTAMP}.mp4"
+    gsutil -q cp "${OUTPUT_DIR}/stage"*"_metadata.json" "${GCS_BUCKET}/output/metadata/" 2>/dev/null || true
+    gsutil cp "${LOG_FILE}" "${GCS_BUCKET}/logs/pipeline_run_${TIMESTAMP}.log"
+    FINAL_LOCATION="${GCS_BUCKET}/output/final_${TIMESTAMP}.mp4"
+else
+    echo "[PIPELINE] GCS disabled — final video kept locally at ${FINAL_LOCATION}"
+fi
 
 # ============================================================================
 # SUMMARY
@@ -318,7 +336,7 @@ echo "  Stage 3 (ControlNet): $((STAGE3_END - STAGE3_START))s"
 echo "  Stage 4 (ComfyUI):    $((STAGE4_END - STAGE4_START))s"
 echo "  Total:                ${TOTAL_TIME}s"
 echo ""
-echo "  Output: ${GCS_BUCKET}/output/final_${TIMESTAMP}.mp4"
+echo "  Output: ${FINAL_LOCATION}"
 echo "================================================================"
 
 # ============================================================================
