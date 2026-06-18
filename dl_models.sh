@@ -31,6 +31,9 @@ get "$REPACK" "split_files/loras/wan2.2_animate_14B_relight_lora_bf16.safetensor
 # Lightx2v distill LoRA (Kijai) — the canonical Animate sampler runs 6-step on this
 mkdir -p "$M/loras/Lightx2v"
 get "Kijai/WanVideo_comfy" "Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" "$M/loras/Lightx2v"
+# RealVisXL checkpoint for the "Generate Avatar" (SDXL text-to-image) feature
+mkdir -p "$M/checkpoints"
+get "SG161222/RealVisXL_V5.0" "RealVisXL_V5.0_fp16.safetensors"                "$M/checkpoints"
 # Detection: ViTPose-H (Kijai) + YOLOv10m (official Wan-AI)
 get "Kijai/vitpose_comfy" "onnx/vitpose_h_wholebody_model.onnx"                  "$M/detection"
 get "Wan-AI/Wan2.2-Animate-14B" "process_checkpoint/det/yolov10m.onnx"           "$M/detection"

@@ -12,13 +12,15 @@ Pairs with `RUNBOOK.md` (human guide) and the memory notes.
   - The user's public key (for reference):
     `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMyxYyRHVMu1H7giIVfjYaNB/kt+eTtDZ+/8bBy0w6Wx vinicius.aeon@gmail.com`
 
-- **Direct TCP endpoint (supports scp/sftp):** `root@69.30.85.25 -p 22103`
-  - ⚠️ **IP and port CHANGE on every pod restart/recreate.** Fetch the current pair from RunPod console → the pod → **Connect → "SSH over exposed TCP"**. The runtime container hostname also changes (e.g. `f241fdbfccbc`); ignore it — use the TCP IP:port.
+- **Direct TCP endpoint (supports scp/sftp):** `root@69.30.85.25 -p 22144` *(last seen 2026-06-18 — re-verify, it changes)*
+  - ⚠️ **IP and port CHANGE on every pod restart/recreate.** Fetch the current pair from RunPod console → the pod → **Connect → "SSH over exposed TCP"**. The runtime container hostname also changes; ignore it — use the TCP IP:port.
 
-- **Always connect with these flags** (the host key changes each pod):
+- **Connect with these flags** (the host key changes each pod, so don't verify it):
   ```bash
   ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p <PORT> root@<IP>
+  # current example (re-verify port): ... -p 22144 root@69.30.85.25
   ```
+  Quick reachability test: append `"echo OK; nvidia-smi --query-gpu=name --format=csv,noheader"`. "Connection refused" = pod is stopped/down → ask the user to start it and supply the new port.
 
 - **Windows key-permission fix** (if SSH falls back to password / "UNPROTECTED PRIVATE KEY"):
   ```powershell
@@ -44,6 +46,14 @@ Pairs with `RUNBOOK.md` (human guide) and the memory notes.
 4. **Tar from Windows → Linux:** extract with `tar xzf - --no-same-owner` (else "Cannot change ownership" errors).
 
 5. **The UI tunnel runs on the LOCAL machine, never inside the pod.**
+
+6. **A pod restart WIPES system python + apt** (only `/workspace` persists) → ComfyUI's deps (`sqlalchemy`, `onnxruntime`, `ffmpeg`, …) vanish and ComfyUI crashes on startup. `runpod_launch.sh` self-heals (re-runs `runpod_setup.sh` when deps are missing), so the **first `runpod_launch.sh` after a restart takes ~3–5 min extra** — expected, not a hang.
+
+7. **Write code fixes to `/workspace/qi-src`, NOT just `/workspace/qi/scripts`.** `runpod_launch.sh` copies `qi-src → qi/scripts` on every launch, so a patch applied only to the runtime gets reverted on the next launch. **To deploy a fix:** update the local repo → `tar` it into `/workspace/qi-src` → run `runpod_launch.sh`. Example full re-sync:
+   ```bash
+   tar czf - --exclude=.git --exclude=__pycache__ --exclude='*.pyc' --exclude='*.mp4' --exclude='*.png' . \
+     | ssh <flags> -p <PORT> root@<IP> "tar xzf - --no-same-owner -C /workspace/qi-src && cd /workspace/qi-src && bash runpod_launch.sh"
+   ```
 
 ---
 

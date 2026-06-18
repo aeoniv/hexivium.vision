@@ -32,7 +32,7 @@ logging.basicConfig(
 log = logging.getLogger("genimage")
 
 PIPELINE_ROOT = Path(os.environ.get("PIPELINE_ROOT", "/opt/qi-pipeline"))
-COMFYUI_DIR = PIPELINE_ROOT / "engines" / "ComfyUI"
+COMFYUI_DIR = Path(os.environ.get("COMFYUI_DIR", str(PIPELINE_ROOT / "engines" / "ComfyUI")))
 COMFYUI_HOST = "127.0.0.1"
 COMFYUI_PORT = 8188
 

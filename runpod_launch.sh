@@ -37,7 +37,16 @@ if [ ! -f "${COMFYUI_DIR}/main.py" ]; then
     exit 1
 fi
 
-# ── orchestrator deps (ComfyUI's own deps are already installed) ────────────
+# ── self-heal deps after a pod RESTART ──────────────────────────────────────
+# RunPod wipes the container's system python + apt packages on every stop/start
+# (only /workspace persists). If ComfyUI's deps are gone, ComfyUI crashes
+# (e.g. ModuleNotFoundError: sqlalchemy). Detect + restore via runpod_setup.sh.
+if ! "${PYBIN}" -c 'import sqlalchemy, websocket, onnxruntime' 2>/dev/null; then
+    echo "[launch] ComfyUI deps missing (post-restart) — restoring via runpod_setup.sh…"
+    bash "${SRC}/runpod_setup.sh"
+fi
+
+# ── orchestrator deps ───────────────────────────────────────────────────────
 "${PYBIN}" -m pip install --break-system-packages --quiet \
     fastapi "uvicorn[standard]" python-multipart websocket-client || true
 
