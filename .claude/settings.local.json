@@ -198,7 +198,21 @@
       "Bash(cp -f generate_image.py dl_models.sh runpod_launch.sh run_pipeline.sh app_server.py /d/hexivium-vm-backup/scripts/)",
       "Bash(cp -f workflows/wan_animate.json /d/hexivium-vm-backup/scripts/workflows/)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git fetch *)",
+      "Bash(git push *)",
+      "Bash(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P 22144 web/index.html web/app.js web/style.css root@69.30.85.25:/workspace/qi-src/web/)",
+      "Bash(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P 22144 web/index.html web/app.js web/style.css root@69.30.85.25:/workspace/qi/scripts/web/)",
+      "Bash(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p 22144 root@69.30.85.25 'curl -s http://127.0.0.1:8000/ | grep -c '\\\\''Avatar Composer\\\\|hex-lines'\\\\''; curl -s http://127.0.0.1:8000/static/app.js | grep -c '\\\\''initComposer'\\\\''')",
+      "Bash(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 -i ~/.ssh/id_ed25519 -p 22060 root@69.30.85.25 'echo REACHABLE; nvidia-smi --query-gpu=name --format=csv,noheader;  echo '\\\\''--- app_server up? ---'\\\\''; curl -fsS -o /dev/null -w '\\\\''%{http_code}\\\\n'\\\\'' http://127.0.0.1:8000/ 2>/dev/null || echo DOWN;  echo '\\\\''--- deps wiped? ---'\\\\''; python3 -c '\\\\''import sqlalchemy'\\\\'' 2>/dev/null && echo '\\\\''deps OK'\\\\'' || echo '\\\\''deps WIPED \\(need self-heal\\)'\\\\''')",
+      "Bash(python -c \"import json; json.load\\(open\\('workflows/img2img_sdxl.json',encoding='utf-8'\\)\\); print\\('img2img workflow JSON OK'\\)\")",
+      "Bash(python -c \"import json; w=json.load\\(open\\('workflows/img2img_sdxl.json',encoding='utf-8'\\)\\); ids=set\\(w\\); bad=[\\(k,v\\) for k,n in w.items\\(\\) for kk,v in n['inputs'].items\\(\\) if isinstance\\(v,list\\) and len\\(v\\)==2 and isinstance\\(v[0],str\\) and v[0] not in ids]; print\\('dangling links:', bad or 'none'\\)\")",
+      "Bash(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p 22060 root@69.30.85.25 'cp -f /workspace/qi/input/reference_image.png /workspace/qi/input/reference_backup.png;  echo '\\\\''--- trigger img2img ---'\\\\''; curl -s -X POST http://127.0.0.1:8000/api/generate-avatar -F '\\\\''prompt=full-body photorealistic person, neutral A-pose, plain grey studio background'\\\\'' -F '\\\\''init_image=@/workspace/qi/input/reference_backup.png'\\\\''; echo;  for i in $\\(seq 1 24\\); do curl -s http://127.0.0.1:8000/api/avatar-status | grep -q '\\\\''\"running\":false'\\\\'' && break; sleep 10; done;  echo '\\\\''--- result ---'\\\\''; curl -s http://127.0.0.1:8000/api/avatar-status | python3 -c '\\\\''import sys,json;d=json.load\\(sys.stdin\\);print\\(\"ready:\",d[\"ready\"],\"| error:\",d[\"error\"] or \"none\"\\);print\\(\"log_tail:\",d[\"log\"][-300:]\\)'\\\\''')",
+      "Bash(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P 22060 root@69.30.85.25:/workspace/qi/input/reference_image.png ./test_img2img_result.png)",
+      "Bash(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p 22060 root@69.30.85.25 'cp -f /workspace/qi/input/reference_backup.png /workspace/qi/input/reference_image.png && rm -f /workspace/qi/input/reference_backup.png && echo restored')",
+      "Bash(cp -f app_server.py generate_image.py /d/hexivium-vm-backup/scripts/)",
+      "Bash(cp -f web/app.js web/index.html web/style.css /d/hexivium-vm-backup/scripts/web/)",
+      "Bash(cp -f workflows/img2img_sdxl.json /d/hexivium-vm-backup/scripts/workflows/)"
     ]
   }
 }

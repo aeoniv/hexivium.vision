@@ -61,19 +61,29 @@
                 </div>
 
                 <div class="card-header" style="margin-top: 1.5rem;">
-                    <h2>Or Generate an Avatar</h2>
+                    <h2>Avatar Composer</h2>
                     <span class="step-num">01b</span>
                 </div>
-                <div class="params-section">
-                    <div class="param-row">
-                        <div class="param-info">
-                            <label for="avatar-prompt">Avatar Prompt</label>
-                        </div>
-                        <textarea id="avatar-prompt" rows="3" class="prompt-input"
-                            placeholder="Describe the character to generate as the reference — full-body, neutral pose, plain background works best..."></textarea>
-                        <span class="param-help">Generates the reference avatar with SDXL — no upload needed. The result becomes your reference image.</span>
+                <div class="composer">
+                    <p class="param-help">Compose a reference avatar from six parameters — each a line of the hexagram. SDXL renders it; the result becomes your reference image.</p>
+
+                    <div class="composer-body">
+                        <div class="hex-seal" id="hex-seal" aria-hidden="true"></div>
+                        <div class="hex-lines" id="hex-lines"><!-- rendered by app.js --></div>
                     </div>
-                    <button class="launch-btn" id="generate-avatar-btn" style="margin-top:0.5rem;">
+
+                    <div class="composer-preview">
+                        <label for="avatar-prompt">Assembled prompt</label>
+                        <textarea id="avatar-prompt" rows="4" class="prompt-input" readonly></textarea>
+                    </div>
+
+                    <div class="composer-preview">
+                        <label for="avatar-ref-input">Reference image (optional — img2img)</label>
+                        <input type="file" id="avatar-ref-input" accept="image/png,image/jpeg">
+                        <span class="param-help" id="avatar-ref-name">No reference — generating from text. Choose an image to make a variation of it.</span>
+                    </div>
+
+                    <button class="launch-btn" id="generate-avatar-btn">
                         <span class="btn-text">GENERATE AVATAR</span>
                         <span class="btn-glow"></span>
                     </button>

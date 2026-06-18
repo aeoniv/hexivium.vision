@@ -37,24 +37,28 @@ avatar_thread: Optional[threading.Thread] = None
 avatar_status = {"running": False, "ready": False, "error": "", "log": ""}
 
 
-def generate_avatar_worker(prompt: str, negative: str):
-    """Run generate_image.py to produce the reference avatar from a text prompt."""
+def generate_avatar_worker(prompt: str, negative: str, init_image: Optional[str] = None):
+    """Run generate_image.py to produce the reference avatar. With `init_image` it
+    runs SDXL img2img (a new variation of the reference); otherwise text-to-image."""
     global avatar_status
     avatar_status = {"running": True, "ready": False, "error": "", "log": ""}
     env = os.environ.copy()
     env["PIPELINE_ROOT"] = str(PIPELINE_ROOT)
 
-    # Use the SAME interpreter that runs this server (the qi-pipeline conda env,
-    # via the systemd ExecStart path) so the subprocess inherits torch/CUDA/etc.
+    # Use the SAME interpreter that runs this server so the subprocess inherits
+    # torch/CUDA/etc. img2img when a reference image was provided, else txt2img.
+    workflow = "img2img_sdxl.json" if init_image else "txt2img_sdxl.json"
     cmd = [
         sys.executable, str(PIPELINE_ROOT / "scripts" / "generate_image.py"),
-        "--workflow", str(PIPELINE_ROOT / "scripts" / "workflows" / "txt2img_sdxl.json"),
+        "--workflow", str(PIPELINE_ROOT / "scripts" / "workflows" / workflow),
         "--output", str(INPUT_DIR / "reference_image.png"),
     ]
     if prompt:
         cmd += ["--prompt", prompt]
     if negative:
         cmd += ["--negative", negative]
+    if init_image:
+        cmd += ["--init-image", init_image]
 
     try:
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=900)
@@ -324,18 +328,27 @@ async def upload_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate-avatar")
-def generate_avatar(prompt: str = Form(""), negative_prompt: str = Form("")):
-    """Generate the reference avatar from a text prompt (SDXL text-to-image)."""
+async def generate_avatar(prompt: str = Form(""), negative_prompt: str = Form(""),
+                          init_image: UploadFile = File(None)):
+    """Generate the reference avatar. With an `init_image` upload → SDXL img2img
+    (a new variation of that reference); otherwise text-to-image."""
     global avatar_thread
     if avatar_status["running"]:
         raise HTTPException(status_code=400, detail="Avatar generation already running.")
     if pipeline_running:
         raise HTTPException(status_code=400, detail="A render is running — wait for it to finish.")
+    init_path = None
+    if init_image is not None and init_image.filename:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        init_path = str(INPUT_DIR / "avatar_init_upload.png")
+        with open(init_path, "wb") as f:
+            f.write(await init_image.read())
     avatar_thread = threading.Thread(
-        target=generate_avatar_worker, args=(prompt.strip(), negative_prompt.strip()), daemon=True
+        target=generate_avatar_worker,
+        args=(prompt.strip(), negative_prompt.strip(), init_path), daemon=True,
     )
     avatar_thread.start()
-    return {"status": "started"}
+    return {"status": "started", "mode": "img2img" if init_path else "txt2img"}
 
 @app.get("/api/avatar-status")
 def get_avatar_status():

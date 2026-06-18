@@ -1,0 +1,68 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": { "title": "SDXL Checkpoint (photoreal)" },
+    "inputs": { "ckpt_name": "RealVisXL_V5.0_fp16.safetensors" }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "Positive Prompt" },
+    "inputs": {
+      "clip": ["1", 1],
+      "text": "full-length studio photograph of a person, head to toe, entire body visible, standing in a relaxed neutral A-pose, facing the camera, plain light-grey seamless background, soft even studio lighting, photorealistic, sharp focus, fine detail, natural skin texture"
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "Negative Prompt" },
+    "inputs": {
+      "clip": ["1", 1],
+      "text": "cropped, close-up, out of frame, cut off legs, multiple people, deformed, extra limbs, bad hands, low quality, blurry, watermark, text, cartoon, 3d render"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "_meta": { "title": "Reference image (img2img init)" },
+    "inputs": { "image": "qi_init.png" }
+  },
+  "11": {
+    "class_type": "ImageScale",
+    "_meta": { "title": "Scale reference to canvas" },
+    "inputs": {
+      "image": ["10", 0],
+      "upscale_method": "lanczos",
+      "width": 768,
+      "height": 1344,
+      "crop": "center"
+    }
+  },
+  "12": {
+    "class_type": "VAEEncode",
+    "_meta": { "title": "Encode reference → latent" },
+    "inputs": { "pixels": ["11", 0], "vae": ["1", 2] }
+  },
+  "5": {
+    "class_type": "KSampler",
+    "_meta": { "title": "Sampler (img2img, denoise < 1)" },
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["2", 0],
+      "negative": ["3", 0],
+      "latent_image": ["12", 0],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 6.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.65
+    }
+  },
+  "6": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["5", 0], "vae": ["1", 2] }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["6", 0], "filename_prefix": "avatar" }
+  }
+}

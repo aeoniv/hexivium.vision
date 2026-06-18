@@ -25,8 +25,88 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const avatarPrompt = document.getElementById("avatar-prompt");
     const generateAvatarBtn = document.getElementById("generate-avatar-btn");
+    const avatarRefInput = document.getElementById("avatar-ref-input");
+    const avatarRefName = document.getElementById("avatar-ref-name");
     const avatarPreview = document.getElementById("avatar-preview");
     const avatarPreviewImg = document.getElementById("avatar-preview-img");
+
+    // ── Parametric Avatar Composer (6-line hexagram token matrix) ───────────
+    const AVATAR_NEGATIVE = "corridor, background scenery, room, walls, bokeh lights, depth of field, outdoor, indoor, cropped feet, cut off shoes, out of frame legs, vertical cropping at ankles, missing toes, truncated lower limbs, blurry hands, double faces, asymmetric eyes, text overlays, signatures, logos, watermarks, distorted joints, explicit nudity, vulgarity, rough sketching, 2D flat style, bad anatomy, deformed anatomy, low resolution background";
+
+    const COMPOSER = [
+        { key: "shot", label: "Shot", opts: [
+            "a full-length full-body", "a full-length wide-angle", "an ortho-view full-body",
+            "an ultra-sharp full-length asset", "a high-resolution full-body", "a head-to-toe studio asset" ] },
+        { key: "frame", label: "Frame", opts: [
+            "female", "male", "androgynous", "femboy", "tomboy", "fluid neutral" ] },
+        { key: "heritage", label: "Heritage", opts: [
+            "American Indian / Alaska Native, deep copper skin tones and high cheekbones",
+            "East Asian, smooth porcelain skin tones",
+            "Black / African American, rich ebony skin tones",
+            "Hispanic / Latino, golden-bronze sun-kissed skin tones",
+            "Middle Eastern / North African, warm olive complexion",
+            "White, clear alabaster skin tones" ] },
+        { key: "build", label: "Build", opts: [
+            "a slender, lithe model build", "a toned athletic build", "a strong muscular build",
+            "a balanced symmetric build", "a lean dancer's build", "a compact, sturdy build" ] },
+        { key: "attire", label: "Attire", opts: [
+            "a sleek matte-black athletic tracking set with black trainers",
+            "minimalist techwear — a zip jacket and tapered cargo trousers with low boots",
+            "a tailored modern suit with clean lines and dress shoes",
+            "relaxed streetwear — an oversized hoodie and joggers with sneakers",
+            "a fitted performance bodysuit with a structured overlay and athletic shoes",
+            "a flowing traditional-inspired robe set with soft sandals" ] },
+        { key: "aspect", label: "Aspect", opts: [
+            "striking blue eyes, clean high-arch eyebrows and a calm neutral expression",
+            "expressive purple eyes, soft straight eyebrows and a confident subtle smirk",
+            "sharp jade-green eyes, angular eyebrows and a focused, composed look",
+            "warm liquid-gold eyes, sleek minimalist eyebrows and a serene gaze",
+            "electric-blue almond eyes, split-cut eyebrows and a poised expression",
+            "soft amber eyes, natural eyebrows and a gentle, approachable smile" ] },
+    ];
+    const composerState = {};
+
+    function cap(t) { return t.charAt(0).toUpperCase() + t.slice(1); }
+    function shortLabel(key, o) {
+        if (key === "heritage") return o.split(",")[0];
+        if (key === "attire") return o.split("—")[0].trim();
+        if (key === "aspect") return o.split(",")[0];
+        if (key === "build") return cap(o.replace(/^a /, "").replace(" build", ""));
+        return cap(o);
+    }
+    function buildAvatarPrompt() {
+        const s = composerState;
+        const heritageName = s.heritage.split(",")[0];
+        const heritageDesc = s.heritage.split(",").slice(1).join(",").trim();
+        return `A crisp, pristine ${s.shot} stylized character model-sheet render featuring a ${heritageName} ${s.frame} avatar — ${heritageDesc} — standing in a precise, centered anatomical T-pose facing the camera from head to toe with no cropping. ${cap(s.aspect)}. Hair styled in a sleek jet-black ponytail with sharp straight-cut bangs. Physique: ${s.build}, perfectly grounded on the floor plane. Wearing ${s.attire}. Completely isolated against a solid, flat, uniform studio-white background with zero environment. Flat, even digital lighting with a clean physics-based contact shadow anchoring the figure to the floor plane. Flawless high-fidelity 8k CG render with clean line work.`;
+    }
+    (function initComposer() {
+        const linesEl = document.getElementById("hex-lines");
+        const sealEl = document.getElementById("hex-seal");
+        if (!linesEl || !avatarPrompt) return;
+        // Hexagram seal: 6 stacked lines, first category = bottom line (I Ching order).
+        COMPOSER.forEach(() => { const i = document.createElement("i"); i.className = "seal-line yin"; sealEl.prepend(i); });
+        COMPOSER.forEach((cat, idx) => {
+            composerState[cat.key] = cat.opts[0];
+            const row = document.createElement("div"); row.className = "hex-line";
+            const glyph = document.createElement("span"); glyph.className = "hex-glyph yin";
+            const ctrl = document.createElement("div"); ctrl.className = "hex-control";
+            const lab = document.createElement("label"); lab.textContent = cat.label;
+            const sel = document.createElement("select");
+            cat.opts.forEach((o) => { const op = document.createElement("option"); op.value = o; op.textContent = shortLabel(cat.key, o); sel.appendChild(op); });
+            sel.addEventListener("change", () => {
+                composerState[cat.key] = sel.value;
+                const yang = sel.selectedIndex !== 0;
+                glyph.className = "hex-glyph " + (yang ? "yang" : "yin");
+                sealEl.children[COMPOSER.length - 1 - idx].className = "seal-line " + (yang ? "yang" : "yin");
+                avatarPrompt.value = buildAvatarPrompt();
+            });
+            ctrl.appendChild(lab); ctrl.appendChild(sel);
+            row.appendChild(glyph); row.appendChild(ctrl);
+            linesEl.appendChild(row);
+        });
+        avatarPrompt.value = buildAvatarPrompt();
+    })();
 
     const launchBtn = document.getElementById("launch-btn");
     const progressBar = document.getElementById("progress-bar");
@@ -241,6 +321,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ── Generate Avatar (SDXL text-to-image) ────────────────────────────────
     let avatarPoll = null;
+    if (avatarRefInput) {
+        avatarRefInput.addEventListener("change", (e) => {
+            const f = e.target.files[0];
+            if (avatarRefName) avatarRefName.textContent = f
+                ? `Reference: ${f.name} — will generate a variation of it (img2img).`
+                : "No reference — generating from text.";
+        });
+    }
+
     generateAvatarBtn.addEventListener("click", () => {
         const btnText = generateAvatarBtn.querySelector(".btn-text");
         generateAvatarBtn.setAttribute("disabled", "true");
@@ -249,6 +338,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const fd = new FormData();
         fd.append("prompt", avatarPrompt.value.trim());
+        fd.append("negative_prompt", AVATAR_NEGATIVE);
+        if (avatarRefInput && avatarRefInput.files.length > 0) {
+            fd.append("init_image", avatarRefInput.files[0]);  // → SDXL img2img
+        }
 
         fetch("/api/generate-avatar", { method: "POST", body: fd })
             .then(res => res.json())

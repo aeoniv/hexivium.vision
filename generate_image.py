@@ -122,6 +122,10 @@ def main():
     ap.add_argument("--steps", type=int, default=30)
     ap.add_argument("--cfg", type=float, default=7.0)
     ap.add_argument("--seed", type=int, default=int(time.time()) % 2_000_000_000)
+    ap.add_argument("--init-image", type=Path, default=None,
+                    help="Optional reference image → img2img (pair with an img2img workflow).")
+    ap.add_argument("--denoise", type=float, default=0.65,
+                    help="img2img denoise strength (lower = closer to the reference).")
     args = ap.parse_args()
 
     with open(args.workflow) as f:
@@ -132,11 +136,27 @@ def main():
         wf["2"]["inputs"]["text"] = args.prompt
     if args.negative:
         wf["3"]["inputs"]["text"] = args.negative
-    wf["4"]["inputs"]["width"] = (args.width // 8) * 8
-    wf["4"]["inputs"]["height"] = (args.height // 8) * 8
+    W, H = (args.width // 8) * 8, (args.height // 8) * 8
+    if "4" in wf:                                   # EmptyLatentImage (txt2img only)
+        wf["4"]["inputs"]["width"], wf["4"]["inputs"]["height"] = W, H
     wf["5"]["inputs"].update({"steps": args.steps, "cfg": args.cfg, "seed": args.seed})
-    log.info(f"Generating {wf['4']['inputs']['width']}x{wf['4']['inputs']['height']} "
-             f"(steps={args.steps}, cfg={args.cfg}, seed={args.seed})")
+
+    # img2img: stage the reference into ComfyUI's input dir, point LoadImage at it,
+    # size the canvas, and apply the denoise strength.
+    if args.init_image and Path(args.init_image).exists():
+        comfy_input = COMFYUI_DIR / "input"
+        comfy_input.mkdir(parents=True, exist_ok=True)
+        dest = comfy_input / f"qi_init{Path(args.init_image).suffix or '.png'}"
+        shutil.copy2(args.init_image, dest)
+        if "10" in wf:
+            wf["10"]["inputs"]["image"] = dest.name
+        if "11" in wf:
+            wf["11"]["inputs"]["width"], wf["11"]["inputs"]["height"] = W, H
+        wf["5"]["inputs"]["denoise"] = args.denoise
+        log.info(f"img2img from {dest.name} → {W}x{H} "
+                 f"(denoise={args.denoise}, steps={args.steps}, cfg={args.cfg}, seed={args.seed})")
+    else:
+        log.info(f"Generating {W}x{H} (steps={args.steps}, cfg={args.cfg}, seed={args.seed})")
 
     out_dir = PIPELINE_ROOT / "output" / "genimage"
     out_dir.mkdir(parents=True, exist_ok=True)
